@@ -1,4 +1,4 @@
-# BDP — Personal Database Management System
+# BDP — Personal Database Management System [Work in progress]
 
 [![CI](https://github.com/ErChulo/bdp-personal-db/actions/workflows/ci.yml/badge.svg)](https://github.com/ErChulo/bdp-personal-db/actions/workflows/ci.yml)
 
