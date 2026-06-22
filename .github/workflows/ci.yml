@@ -1,0 +1,68 @@
+name: CI
+
+# Run the gates on every PR and on every push to main so post-merge drift
+# surfaces immediately. `pull_request` matches PRs targeting any branch by
+# default; tighten to specific branches if the project ever needs it.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same ref so a push-fix loop doesn't pile up
+# CI minutes on a single PR.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    name: typecheck + vitest
+    runs-on: ubuntu-latest
+    # Hard ceiling — fail loudly rather than hang if the gates regress.
+    # 15 minutes absorbs a cold `npm ci` install + a full typecheck + the
+    # vitest suite without spuriously tripping timeout, while cancel-in-
+    # progress keeps repeat-loop minutes in check.
+    timeout-minutes: 15
+    # Scope the default GITHUB_TOKEN to read-only at job scope. None of
+    # the steps need to write back, so this minimizes blast radius if an
+    # upstream action is ever compromised.
+    permissions:
+      contents: read
+
+    # NOTE: actions are pinned to major-version tags for readability. For
+    # repos that take outside contributions, switch to commit-SHA pinning
+    # (see dependabot.yml + GitHub's pinned-actions guidance) to mitigate
+    # the risk that an upstream tag is rotated to a backdoored release.
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          # Cache npm's `~/.npm` using package-lock.json as the key. Speeds
+          # up repeated runs; falls back to a cold install cleanly.
+          cache: npm
+
+      - name: ci-install
+        # `npm ci` (vs `npm install`) reads lockfile exactly and prunes
+        # node_modules — what you want for reproducible gates.
+        run: npm ci
+
+      - name: TypeScript strict typecheck
+        run: npm run typecheck
+
+      - name: Vitest gates
+        # Default vitest reporter prints the full Error.message on failure,
+        # which is where tests/formFields.test.ts surfaces:
+        #   • The form-fields-missing-id/name report  (test 2)
+        #   • The label↔id pairing report            (test 3)
+        #   • The duplicate-id sweep with per-cluster Severity:
+        #     `N duplicate id(s) — X high, Y medium, Z low:`  (test 4)
+        # so the per-severity totals and `[Severity: high]` lines show
+        # up verbatim in the GitHub Actions log without any extra plumbing.
+        # We deliberately don't pass `--reporter=…` here — the default
+        # is the right tradeoff between verbosity and signal.
+        run: npm test

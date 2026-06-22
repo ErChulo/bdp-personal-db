@@ -1,0 +1,55 @@
+# Dependabot configuration for the BDP repo.
+#
+# Companion to .github/workflows/ci.yml:
+#   • Keeps `github-actions` references current. Today those references are
+#     pinned to major-version tags (`actions/checkout@v4`,
+#     `actions/setup-node@v4`); once we move to immutable commit-SHA pinning,
+#     dependabot will auto-bump SHAs on this same weekly cadence.
+#   • Keeps `npm` dependencies current against `package.json` +
+#     `package-lock.json`, with patch + minor updates grouped into one
+#     aggregated PR per week so the maintenance queue stays readable.
+#
+# Major-version bumps are intentionally left to open as individual PRs so a
+# human reviews them before they land — that matches the "manual SHA bumps"
+# tradeoff noted in ci.yml's hardening NOTE.
+#
+# Reference: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+
+version: 2
+
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    # Apply both labels so Dependabot PRs are greppable and reviewers can
+    # route them through the project board's label filter.
+    labels:
+      - "dependencies"
+      - "ci"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    # Default commit-message pattern ("Bump actions/checkout from X to Y")
+    # is fine; pinning SHAs is documented in the ci.yml NOTE block.
+
+  - package-ecosystem: "npm"
+    directory: "/"
+    # Explicit so future maintainers don't accidentally flip the default.
+    # "increase" = Dependabot raises the lower bound of any range in
+    # package.json (matches the way BDP edits the lockfile manually today).
+    versioning-strategy: increase
+    labels:
+      - "dependencies"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    # Aggregate patch + minor updates into a single PR per week so the
+    # queue is one PR instead of many. Major updates land individually
+    # below so a human reviews them; security advisories still bypass the
+    # group and open immediately.
+    groups:
+      patch-and-minor:
+        update-types:
+          - "minor"
+          - "patch"
