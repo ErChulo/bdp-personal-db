@@ -8,6 +8,8 @@ export function Reports() {
   const sqlDbs = useAppStore((s) => s.sqlDbs);
   const nosql = useAppStore((s) => s.nosqlCollections);
   const activeSqlId = useAppStore((s) => s.activeSqlDbId);
+  const beginOperation = useAppStore((s) => s.beginOperation);
+  const endOperation = useAppStore((s) => s.endOperation);
   const [source, setSource] = useState<'sql' | 'nosql'>('sql');
   const [sqlId, setSqlId] = useState<string>('');
   const [colId, setColId] = useState<string>('');
@@ -40,6 +42,8 @@ export function Reports() {
   useEffect(() => {
     if (!table) { setColumns([]); setRows([]); setStats([]); return; }
     setBusy(true); setError(null);
+    let operationError: string | undefined;
+    beginOperation('query');
     (async () => {
       try {
         if (source === 'sql') {
@@ -59,8 +63,14 @@ export function Reports() {
           setRows(arr);
           setStats(cols.map((c, i) => computeColumnStats(c, i, arr)));
         }
-      } catch (err) { setError((err as Error).message); }
-      finally { setBusy(false); }
+      } catch (err) {
+        operationError = (err as Error).message;
+        setError(operationError);
+      }
+      finally {
+        endOperation('query', operationError);
+        setBusy(false);
+      }
     })();
   }, [source, sqlId, activeSqlId, table, colId, nosql]);
 

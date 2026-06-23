@@ -1,5 +1,12 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { beginOperation, createInitialWorkspaceOperationState, endOperation } from '../workspace/operations';
+import type {
+  WorkspaceOperationKind,
+  WorkspaceOperationState,
+  WorkspaceOwnershipState,
+  WorkspaceUpdateState,
+} from '../workspace/types';
 
 export type SectionId =
   | 'dashboard'
@@ -38,6 +45,9 @@ interface AppState {
   // SQL state
   sqlDbs: SqlDbHandle[];
   activeSqlDbId: string | null;
+  activeSqlTable: string | null;
+  sqlManagerTab: 'schema' | 'data' | 'indexes' | 'settings';
+  queryDraft: string;
   // NoSQL state
   nosqlCollections: NosqlCollectionHandle[];
   activeNosqlId: string | null;
@@ -51,10 +61,17 @@ interface AppState {
   queryHistory: { id: string; sql: string; ts: number; dbId: string | null }[];
   // quota display
   storageEstimate: { usageMB: number; quotaMB: number } | null;
+  // workspace coordination
+  ownership: WorkspaceOwnershipState;
+  updateState: WorkspaceUpdateState;
+  operations: WorkspaceOperationState;
 
   // setters
   setSection: (s: SectionId) => void;
   setActiveSqlDb: (id: string | null) => void;
+  setActiveSqlTable: (table: string | null) => void;
+  setSqlManagerTab: (tab: AppState['sqlManagerTab']) => void;
+  setQueryDraft: (sql: string) => void;
   upsertSqlDb: (h: SqlDbHandle) => void;
   removeSqlDb: (id: string) => void;
   setActiveNosql: (id: string | null) => void;
@@ -67,6 +84,10 @@ interface AppState {
   pushRecent: (label: string) => void;
   pushQuery: (sql: string, dbId: string | null) => void;
   setStorageEstimate: (e: { usageMB: number; quotaMB: number } | null) => void;
+  setOwnership: (state: WorkspaceOwnershipState) => void;
+  setUpdateState: (state: WorkspaceUpdateState) => void;
+  beginOperation: (kind: WorkspaceOperationKind) => void;
+  endOperation: (kind: WorkspaceOperationKind, error?: string) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -75,6 +96,9 @@ export const useAppStore = create<AppState>()(
       section: 'dashboard',
       sqlDbs: [],
       activeSqlDbId: null,
+      activeSqlTable: null,
+      sqlManagerTab: 'schema',
+      queryDraft: 'SELECT name FROM sqlite_master WHERE type="table";',
       nosqlCollections: [],
       activeNosqlId: null,
       theme: 'mono',
@@ -84,9 +108,15 @@ export const useAppStore = create<AppState>()(
       recent: [],
       queryHistory: [],
       storageEstimate: null,
+      ownership: { status: 'acquiring', tabId: '', writerEpoch: 0, message: null },
+      updateState: { status: 'current', buildId: null, message: null },
+      operations: createInitialWorkspaceOperationState(),
 
       setSection: (s) => set({ section: s }),
       setActiveSqlDb: (id) => set({ activeSqlDbId: id }),
+      setActiveSqlTable: (table) => set({ activeSqlTable: table }),
+      setSqlManagerTab: (tab) => set({ sqlManagerTab: tab }),
+      setQueryDraft: (sql) => set({ queryDraft: sql }),
       upsertSqlDb: (h) =>
         set((state) => {
           const next = state.sqlDbs.filter((d) => d.id !== h.id);
@@ -98,6 +128,7 @@ export const useAppStore = create<AppState>()(
         set((state) => ({
           sqlDbs: state.sqlDbs.filter((d) => d.id !== id),
           activeSqlDbId: state.activeSqlDbId === id ? null : state.activeSqlDbId,
+          activeSqlTable: state.activeSqlDbId === id ? null : state.activeSqlTable,
         })),
       setActiveNosql: (id) => set({ activeNosqlId: id }),
       upsertNosql: (h) =>
@@ -128,6 +159,12 @@ export const useAppStore = create<AppState>()(
           ].slice(0, 200),
         })),
       setStorageEstimate: (e) => set({ storageEstimate: e }),
+      setOwnership: (state) => set({ ownership: state }),
+      setUpdateState: (state) => set({ updateState: state }),
+      beginOperation: (kind) =>
+        set((state) => ({ operations: beginOperation(state.operations, kind) })),
+      endOperation: (kind, error) =>
+        set((state) => ({ operations: endOperation(state.operations, kind, error) })),
     }),
     {
       name: 'bdp-meta',
@@ -135,6 +172,12 @@ export const useAppStore = create<AppState>()(
       partialize: (state) => ({
         theme: state.theme,
         layout: state.layout,
+        section: state.section,
+        activeSqlDbId: state.activeSqlDbId,
+        activeSqlTable: state.activeSqlTable,
+        sqlManagerTab: state.sqlManagerTab,
+        queryDraft: state.queryDraft,
+        activeNosqlId: state.activeNosqlId,
         recent: state.recent.slice(0, 20),
         queryHistory: state.queryHistory.slice(0, 50),
       }),

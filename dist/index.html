@@ -5,11 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BDP — Personal Database Management System</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230f1118'/%3E%3Ctext x='8' y='12' text-anchor='middle' font-family='monospace' font-size='10' fill='%235cf2d6'%3E%E2%97%8B%3C/text%3E%3C/svg%3E" />
-    <script type="module" crossorigin src="/assets/index-DipdxFcY.js"></script>
-    <link rel="modulepreload" crossorigin href="/assets/dexie-B8-iXgwV.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-qwixlLtg.css">
+    <script type="module" crossorigin src="./assets/index-Bv6cQkjg.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/dexie-B8-iXgwV.js">
+    <link rel="stylesheet" crossorigin href="./assets/index-D6NgZwj5.css">
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      if (location.protocol === 'file:') {
+        document.getElementById('root').innerHTML = `
+          <main style="max-width:720px;margin:64px auto;padding:24px;font:16px/1.5 monospace;color:#d8deef;background:#0f1118;border:1px solid #343b52">
+            <h1 style="color:#5cf2d6">BDP needs a local HTTP origin</h1>
+            <p>Browsers block this app's modules, workers, and SQLite WASM when <code>index.html</code> is opened through <code>file://</code>.</p>
+            <p>From the project directory, run:</p>
+            <pre style="padding:12px;background:#171b27;color:#5cf2d6">npm run serve</pre>
+            <p>Then open <a style="color:#5cf2d6" href="http://127.0.0.1:4173">http://127.0.0.1:4173</a>. The server is local and does not require internet access.</p>
+          </main>`;
+      }
+    </script>
   </body>
 </html>

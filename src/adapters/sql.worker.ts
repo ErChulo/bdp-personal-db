@@ -73,11 +73,8 @@ type InMsg =
   | RawExecMsg;
 
 function getDb(SQL: SqlJsStatic, dbId: string): Database {
-  let db = databases.get(dbId);
-  if (!db) {
-    db = new SQL.Database();
-    databases.set(dbId, db);
-  }
+  const db = databases.get(dbId);
+  if (!db) throw new Error(`db ${dbId} is not loaded`);
   return db;
 }
 

@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   gates:
-    name: typecheck + vitest
+    name: typecheck + build + vitest
     runs-on: ubuntu-latest
     # Hard ceiling — fail loudly rather than hang if the gates regress.
     # 15 minutes absorbs a cold `npm ci` install + a full typecheck + the
@@ -53,6 +53,9 @@ jobs:
 
       - name: TypeScript strict typecheck
         run: npm run typecheck
+
+      - name: Production build
+        run: npm run build
 
       - name: Vitest gates
         # Default vitest reporter prints the full Error.message on failure,

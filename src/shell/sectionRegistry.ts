@@ -1,5 +1,7 @@
+import type { SectionId } from './store';
+
 export interface SectionDef {
-  id: string;
+  id: SectionId;
   label: string;
   fkey: string;
   hint?: string;

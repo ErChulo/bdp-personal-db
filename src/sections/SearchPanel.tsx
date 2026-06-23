@@ -24,9 +24,13 @@ export function SearchPanel() {
   const serializedRef = useRef<string>('');
   const sqlDbs = useAppStore((s) => s.sqlDbs);
   const collections = useAppStore((s) => s.nosqlCollections);
+  const beginOperation = useAppStore((s) => s.beginOperation);
+  const endOperation = useAppStore((s) => s.endOperation);
 
   async function rebuildIndex() {
     setBusy(true); setError(null);
+    let operationError: string | undefined;
+    beginOperation('query');
     try {
       const docs: IndexedDoc[] = [];
       const metaMap = new Map<string, IndexedMetaEntry>();
@@ -59,8 +63,10 @@ export function SearchPanel() {
       setIndexedAt(Date.now());
       setInfo('index built');
     } catch (err) {
-      setError((err as Error).message);
+      operationError = (err as Error).message;
+      setError(operationError);
     } finally {
+      endOperation('query', operationError);
       setBusy(false);
     }
   }
@@ -68,6 +74,8 @@ export function SearchPanel() {
   async function runSearch() {
     if (!query.trim()) { setHits([]); return; }
     setBusy(true); setError(null);
+    let operationError: string | undefined;
+    beginOperation('query');
     try {
       if (!serializedRef.current) {
         await rebuildIndex();
@@ -83,8 +91,12 @@ export function SearchPanel() {
         .filter((x): x is Hit => x !== null);
       setHits(decorated);
     } catch (err) {
-      setError((err as Error).message);
-    } finally { setBusy(false); }
+      operationError = (err as Error).message;
+      setError(operationError);
+    } finally {
+      endOperation('query', operationError);
+      setBusy(false);
+    }
   }
 
   const lastIndexedLabel = useMemo(() => indexedAt ? new Date(indexedAt).toLocaleTimeString() : 'never', [indexedAt]);

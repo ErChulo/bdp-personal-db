@@ -4,6 +4,7 @@ import { parseCsv, inferTypes, type CsvInferred } from '../importExport/csv';
 import { parseJsonArray, parseNdjson } from '../importExport/json';
 import { parseSqlDump, dumpToForeignKeys } from '../importExport/sqlDump';
 import { isProbablySqlite, readSqliteFile } from '../importExport/sqliteFile';
+import { ensureFileWithinLimit, readTextFile } from '../importExport/fileIntake';
 import { sqlAdapter } from '../adapters/sqlAdapter';
 import { sqlStore } from '../adapters/sqlStore';
 import { nosqlAdapter, type CollectionMetaRecord } from '../adapters/nosqlAdapter';
@@ -22,23 +23,29 @@ export function ImportPanel() {
   const [info, setInfo] = useState<string | null>(null);
   const sqlDbs = useAppStore((s) => s.sqlDbs);
   const collections = useAppStore((s) => s.nosqlCollections);
+  const ownership = useAppStore((s) => s.ownership);
   const upsertSql = useAppStore((s) => s.upsertSqlDb);
   const upsertCol = useAppStore((s) => s.upsertNosql);
   const pushRecent = useAppStore((s) => s.pushRecent);
+  const beginOperation = useAppStore((s) => s.beginOperation);
+  const endOperation = useAppStore((s) => s.endOperation);
   const [importTarget, setImportTarget] = useState<'new-sql' | 'new-nosql' | string>('new-sql');
   const [newDbName, setNewDbName] = useState('');
+  const canWrite = ownership.status === 'writable';
 
   async function onFiles(files: FileList | null) {
     if (!files || !files[0]) return;
+    if (!canWrite) return setError('This tab is read-only. Take over write access before importing data.');
     setError(null); setInfo(null); setParsed(null);
     const file = files[0];
     try {
+      ensureFileWithinLimit(file, file.name);
       if (/\.sqlite$|\.db$/i.test(file.name)) {
         const bytes = await readSqliteFile(file);
         setParsed({ kind: 'sqlite', bytes });
         return;
       }
-      const text = await file.text();
+      const text = await readTextFile(file);
       if (/\.csv$/i.test(file.name)) {
         const { columns, rows } = parseCsv(text);
         setParsed({ kind: 'csv', columns, rows });
@@ -90,14 +97,17 @@ export function ImportPanel() {
 
   async function handleRun() {
     if (!parsed) return;
+    if (!canWrite) return setError('This tab is read-only. Take over write access before importing data.');
     setError(null); setInfo(null); setBusy(true);
+    let operationError: string | undefined;
+    beginOperation('import');
     try {
       if (parsed.kind === 'sqlite') {
         const id = 'sql_' + uid();
         await sqlAdapter.importBytes(id, parsed.bytes);
         const now = Date.now();
         const name = newDbName.trim() || 'imported';
-        await sqlStore.write(id, { bytes: parsed.bytes, name, createdAt: now, updatedAt: now });
+        await sqlStore.write(id, { bytes: parsed.bytes, name, createdAt: now, updatedAt: now, revision: 1, checksum: '' });
         upsertSql({ id, name, createdAt: now, updatedAt: now });
         pushRecent(`imported SQL DB "${name}"`);
         setInfo(`imported ${parsed.bytes.byteLength} bytes`);
@@ -112,25 +122,53 @@ export function ImportPanel() {
           : (sourceInferred[0] ? Object.keys(sourceInferred[0]) : []);
         if (importTarget === 'new-sql' || sqlDbs.find((d) => d.id === importTarget)) {
           const dbId = importTarget === 'new-sql' ? 'sql_' + uid() : importTarget;
-          await sqlAdapter.create(dbId, `CREATE TABLE data (${sourceColumns.map((c) => `"${c}" TEXT`).join(', ')});`);
+          if (importTarget === 'new-sql') {
+            await sqlAdapter.create(dbId, `CREATE TABLE data (${sourceColumns.map((c) => `"${c}" TEXT`).join(', ')});`);
+            const initialBytes = await sqlAdapter.export(dbId);
+            const now = Date.now();
+            await sqlStore.write(dbId, { bytes: initialBytes, name: newDbName.trim() || 'imported-csv', createdAt: now, updatedAt: now, revision: 1, checksum: '' });
+            const chunkSize = 100;
+            for (let i = 0; i < sourceInferred.length; i += chunkSize) {
+              const chunk = sourceInferred.slice(i, i + chunkSize);
+              const values = chunk.map((r) => '(' + sourceColumns.map((c) => sqlValue(r[c])).join(', ') + ')').join(', ');
+              await sqlAdapter.run(dbId, `INSERT INTO data (${sourceColumns.map((c) => `"${c}"`).join(', ')}) VALUES ${values};`);
+            }
+            const name = newDbName.trim() || 'imported-csv';
+            const stored = await sqlStore.read(dbId);
+            if (stored) {
+              await sqlStore.write(dbId, { bytes: stored.bytes, name, createdAt: stored.createdAt, updatedAt: now, revision: stored.revision + 1, checksum: '' });
+            }
+            upsertSql({ id: dbId, name, createdAt: now, updatedAt: now });
+            pushRecent(`imported CSV/JSON → SQL DB "${name}" (${sourceInferred.length} rows)`);
+            setInfo(`imported ${sourceInferred.length} rows`);
+            setParsed(null);
+            return;
+          }
+          const existing = sqlDbs.find((d) => d.id === dbId);
+          if (!existing) throw new Error('selected SQL destination is missing');
+          const schema = await sqlAdapter.schema(dbId);
+          if (schema.tables.length !== 1) throw new Error('existing SQL destination must have exactly one table to append');
+          const table = schema.tables[0];
+          const existingColumns = table.columns.map((c) => c.name);
+          if (normalizeColumns(existingColumns).join('\u0000') !== normalizeColumns(sourceColumns).join('\u0000')) {
+            throw new Error(`schema mismatch for "${table.name}" — append rejected`);
+          }
           const chunkSize = 100;
           for (let i = 0; i < sourceInferred.length; i += chunkSize) {
             const chunk = sourceInferred.slice(i, i + chunkSize);
             const values = chunk.map((r) => '(' + sourceColumns.map((c) => sqlValue(r[c])).join(', ') + ')').join(', ');
-            await sqlAdapter.run(dbId, `INSERT INTO data (${sourceColumns.map((c) => `"${c}"`).join(', ')}) VALUES ${values};`);
+            await sqlAdapter.run(dbId, `INSERT INTO ${quoteIdent(table.name)} (${sourceColumns.map((c) => quoteIdent(c)).join(', ')}) VALUES ${values};`);
           }
           const now = Date.now();
-          const bytes = await sqlAdapter.export(dbId);
-          const name = importTarget === 'new-sql' ? (newDbName.trim() || 'imported-csv') : (sqlDbs.find((d) => d.id === dbId)?.name ?? 'updated');
-          await sqlStore.write(dbId, { bytes, name, createdAt: now, updatedAt: now });
-          if (importTarget === 'new-sql') {
-            upsertSql({ id: dbId, name, createdAt: now, updatedAt: now });
-            pushRecent(`imported CSV/JSON → SQL DB "${name}" (${sourceInferred.length} rows)`);
-          } else {
-            pushRecent(`appended ${sourceInferred.length} rows to SQL DB "${name}"`);
+          const name = existing.name;
+          const stored = await sqlStore.read(dbId);
+          if (stored) {
+            await sqlStore.write(dbId, { bytes: stored.bytes, name, createdAt: stored.createdAt, updatedAt: now, revision: stored.revision + 1, checksum: '' });
           }
+          pushRecent(`appended ${sourceInferred.length} rows to SQL DB "${name}"`);
           setInfo(`imported ${sourceInferred.length} rows`);
-          setParsed(null); return;
+          setParsed(null);
+          return;
         }
         const colId = 'col_' + uid();
         const meta: CollectionMetaRecord = {
@@ -154,6 +192,9 @@ export function ImportPanel() {
       if (parsed.kind === 'sqlDump' && parsed.tables) {
         const dbId = importTarget === 'new-sql' ? 'sql_' + uid() : importTarget;
         await sqlAdapter.create(dbId);
+        const initialBytes = await sqlAdapter.export(dbId);
+        const now = Date.now();
+        await sqlStore.write(dbId, { bytes: initialBytes, name: newDbName.trim() || 'imported-sql', createdAt: now, updatedAt: now, revision: 1, checksum: '' });
         for (const t of parsed.tables) {
           const colDefs = t.columns.length ? t.columns.map((c) => `"${c}" TEXT`).join(', ') : '"__empty__" TEXT';
           await sqlAdapter.exec(dbId, `CREATE TABLE IF NOT EXISTS "${t.name}" (${colDefs});`);
@@ -161,10 +202,11 @@ export function ImportPanel() {
             try { await sqlAdapter.exec(dbId, stmt); } catch { /* skip malformed */ }
           }
         }
-        const now = Date.now();
-        const bytes = await sqlAdapter.export(dbId);
         const name = importTarget === 'new-sql' ? (newDbName.trim() || 'imported-sql') : (sqlDbs.find((d) => d.id === dbId)?.name ?? 'updated');
-        await sqlStore.write(dbId, { bytes, name, createdAt: now, updatedAt: now });
+        const stored = await sqlStore.read(dbId);
+        if (stored) {
+          await sqlStore.write(dbId, { bytes: stored.bytes, name, createdAt: stored.createdAt, updatedAt: now, revision: stored.revision + 1, checksum: '' });
+        }
         if (importTarget === 'new-sql') {
           upsertSql({ id: dbId, name, createdAt: now, updatedAt: now });
           pushRecent(`imported SQL dump → "${name}" (${parsed.tables.length} tables)`);
@@ -173,8 +215,12 @@ export function ImportPanel() {
         setParsed(null); return;
       }
     } catch (err) {
-      setError((err as Error).message);
-    } finally { setBusy(false); }
+      operationError = (err as Error).message;
+      setError(operationError);
+    } finally {
+      endOperation('import', operationError);
+      setBusy(false);
+    }
   }
 
   return (
@@ -195,7 +241,7 @@ export function ImportPanel() {
               <input id="import-file" name="importFile" type="file" style={{ display: 'none' }}
                 accept=".csv,.json,.ndjson,.sql,.sqlite,.db,text/csv,application/json,application/octet-stream"
                 onChange={(e) => void onFiles(e.target.files)} />
-              <button className="btn-primary" onClick={(e) => (e.currentTarget.previousElementSibling as HTMLInputElement).click()}>
+              <button className="btn-primary" disabled={!canWrite} onClick={(e) => (e.currentTarget.previousElementSibling as HTMLInputElement).click()}>
                 Choose file…
               </button>
             </label>
@@ -227,7 +273,7 @@ export function ImportPanel() {
               {previewText()}
             </pre>
             <div className="btn-row" style={{ marginTop: 8 }}>
-              <button className="btn-primary" disabled={busy} onClick={handleRun}>{busy ? 'importing…' : '↓ Import'}</button>
+              <button className="btn-primary" disabled={busy || !canWrite} onClick={handleRun}>{busy ? 'importing...' : 'Import'}</button>
               <button onClick={() => setParsed(null)}>cancel</button>
             </div>
           </>
@@ -243,4 +289,12 @@ function sqlValue(v: unknown): string {
   if (typeof v === 'boolean') return v ? '1' : '0';
   if (v instanceof Date) return "'" + v.toISOString() + "'";
   return "'" + String(v).replace(/'/g, "''") + "'";
+}
+
+function quoteIdent(s: string): string {
+  return '"' + s.replace(/"/g, '""') + '"';
+}
+
+function normalizeColumns(columns: string[]): string[] {
+  return columns.map((c) => c.trim().toLowerCase()).filter(Boolean).sort();
 }

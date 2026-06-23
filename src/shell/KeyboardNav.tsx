@@ -41,6 +41,10 @@ export function KeyboardNav({ children }: { children: React.ReactNode }) {
       }
       // F-keys (don't fire while typing in inputs)
       if (isTypingTarget(e.target)) return;
+      if (e.key === 'Escape') {
+        setSection('dashboard');
+        return;
+      }
       if (e.key.startsWith('F') && FKEY_MAP[e.key]) {
         // F5 has a browser default (refresh). We override but provide Ctrl+R as alternative.
         e.preventDefault();

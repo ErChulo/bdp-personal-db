@@ -18,12 +18,16 @@ export function NosqlManager() {
   const [docs, setDocs] = useState<NosqlDoc[] | null>(null);
   const collections = useAppStore((s) => s.nosqlCollections);
   const activeId = useAppStore((s) => s.activeNosqlId);
+  const ownership = useAppStore((s) => s.ownership);
   const setActive = useAppStore((s) => s.setActiveNosql);
   const upsert = useAppStore((s) => s.upsertNosql);
   const remove = useAppStore((s) => s.removeNosql);
   const pushRecent = useAppStore((s) => s.pushRecent);
+  const beginOperation = useAppStore((s) => s.beginOperation);
+  const endOperation = useAppStore((s) => s.endOperation);
 
   const active = collections.find((c) => c.id === activeId);
+  const canWrite = ownership.status === 'writable';
 
   useEffect(() => {
     if (!activeId) { setDocs(null); return; }
@@ -35,10 +39,12 @@ export function NosqlManager() {
   }, [activeId]);
 
   async function handleCreate() {
+    if (!canWrite) return setError('This tab is read-only. Take over write access before creating a collection.');
     const name = newName.trim();
     if (!name) return setError('name is required');
     try {
       setBusy(true);
+      beginOperation('mutation');
       const id = 'col_' + uid();
       const meta: CollectionMetaRecord = {
         id,
@@ -55,36 +61,56 @@ export function NosqlManager() {
       setNewName('');
       setNewFields([{ name: 'title', type: 'string' }]);
       pushRecent(`created NoSQL collection "${name}"`);
+      endOperation('mutation');
     } catch (err) {
-      setError((err as Error).message);
+      const message = (err as Error).message;
+      setError(message);
+      endOperation('mutation', message);
     } finally { setBusy(false); }
   }
 
   async function handleRename(name: string) {
     if (!activeId) return;
+    if (!canWrite) return setError('This tab is read-only. Take over write access before renaming a collection.');
+    beginOperation('mutation');
     const meta = await nosqlAdapter.getCollectionMeta(activeId);
-    if (!meta) return;
+    if (!meta) { endOperation('mutation'); return; }
     const next = { ...meta, name, updatedAt: Date.now() };
-    await nosqlAdapter.upsertCollectionMeta(next);
-    upsert({ id: next.id, name: next.name, fieldNames: next.fields.map((f) => f.name), createdAt: next.createdAt, updatedAt: next.updatedAt });
-    setInfo(`renamed to '${name}'`);
+    try {
+      await nosqlAdapter.upsertCollectionMeta(next);
+      upsert({ id: next.id, name: next.name, fieldNames: next.fields.map((f) => f.name), createdAt: next.createdAt, updatedAt: next.updatedAt });
+      setInfo(`renamed to '${name}'`);
+      endOperation('mutation');
+    } catch (err) {
+      const message = (err as Error).message;
+      setError(message);
+      endOperation('mutation', message);
+    }
   }
 
   async function handleDelete() {
     if (!activeId || !active) return;
+    if (!canWrite) return setError('This tab is read-only. Take over write access before deleting a collection.');
     if (!confirm(`Delete NoSQL collection "${active.name}"? This cannot be undone.`)) return;
     try {
       setBusy(true);
+      beginOperation('mutation');
       await nosqlAdapter.removeCollection(activeId);
       remove(activeId);
       setInfo(`deleted ${active.name}`);
       pushRecent(`deleted NoSQL collection "${active.name}"`);
-    } catch (err) { setError((err as Error).message); }
+      endOperation('mutation');
+    } catch (err) {
+      const message = (err as Error).message;
+      setError(message);
+      endOperation('mutation', message);
+    }
     finally { setBusy(false); }
   }
 
   async function handleAddDoc() {
     if (!activeId || !active) return;
+    if (!canWrite) return setError('This tab is read-only. Take over write access before adding documents.');
     const meta = await nosqlAdapter.getCollectionMeta(activeId);
     if (!meta) return;
     const doc: NosqlDoc = { id: uid('doc') };
@@ -94,12 +120,18 @@ export function NosqlManager() {
       doc[f.name] = coerce(raw, f.type);
     }
     try {
+      beginOperation('mutation');
       await nosqlAdapter.insertDocs(activeId, [doc]);
       const docs2 = await nosqlAdapter.listDocs(activeId, { limit: 50 });
       setDocs(docs2);
       setInfo(`added document ${doc.id}`);
       pushRecent(`added doc to "${active.name}"`);
-    } catch (err) { setError((err as Error).message); }
+      endOperation('mutation');
+    } catch (err) {
+      const message = (err as Error).message;
+      setError(message);
+      endOperation('mutation', message);
+    }
   }
 
   return (
@@ -112,7 +144,7 @@ export function NosqlManager() {
       <div className="split section-content" style={{ padding: 0 }}>
         <div className="list-pane">
           <div style={{ padding: 8, borderBottom: '1px solid var(--border)' }}>
-            <button className="btn-primary" onClick={() => setCreating(true)}>+ New Collection</button>
+            <button className="btn-primary" onClick={() => setCreating(true)} disabled={!canWrite}>+ New Collection</button>
           </div>
           {collections.length === 0 && <div style={{ padding: 12, color: 'var(--fg-muted)' }}>no NoSQL collections yet</div>}
           {collections.map((c) => (
@@ -148,14 +180,14 @@ export function NosqlManager() {
                     <option value="date">date</option>
                     <option value="json">json</option>
                   </select>
-                  <button onClick={() => setNewFields((arr) => arr.filter((_, j) => j !== i))}>×</button>
+                  <button disabled={!canWrite} onClick={() => setNewFields((arr) => arr.filter((_, j) => j !== i))}>×</button>
                 </div>
               ))}
               <div className="btn-row" style={{ marginTop: 4 }}>
-                <button onClick={() => setNewFields((arr) => [...arr, { name: '', type: 'string' }])}>+ field</button>
+                <button disabled={!canWrite} onClick={() => setNewFields((arr) => [...arr, { name: '', type: 'string' }])}>+ field</button>
               </div>
               <div className="btn-row" style={{ marginTop: 6 }}>
-                <button className="btn-primary" disabled={busy} onClick={handleCreate}>create</button>
+                <button className="btn-primary" disabled={busy || !canWrite} onClick={handleCreate}>create</button>
                 <button onClick={() => setCreating(false)}>cancel</button>
               </div>
             </div>
@@ -178,13 +210,13 @@ export function NosqlManager() {
               <div className="tab-body">
                 {busy && <div style={{ color: 'var(--fg-muted)', fontSize: 12 }}>busy…</div>}
                 {tab === 'fields' && (
-                  <FieldsTab collectionId={active.id} onMessage={setInfo} />
+                  <FieldsTab collectionId={active.id} onMessage={setInfo} canWrite={canWrite} />
                 )}
                 {tab === 'data' && (
                   <div>
                     <div className="btn-row" style={{ marginBottom: 8 }}>
-                      <button className="btn-primary" onClick={handleAddDoc}>+ add document</button>
-                      <button className="btn-danger" onClick={handleDelete}>delete collection</button>
+                      <button className="btn-primary" disabled={!canWrite || busy} onClick={handleAddDoc}>+ add document</button>
+                      <button className="btn-danger" disabled={!canWrite || busy} onClick={handleDelete}>delete collection</button>
                     </div>
                     <pre style={{ background: 'var(--bg-elev)', padding: 10, overflow: 'auto', maxHeight: 360, border: '1px solid var(--border)' }}>
                       {docs && active.fieldNames.length
@@ -195,7 +227,7 @@ export function NosqlManager() {
                 )}
                 <hr className="ascii" />
                 <div className="btn-row">
-                  <button onClick={() => {
+                  <button disabled={!canWrite || busy} onClick={() => {
                     const newName = prompt('rename to', active.name);
                     if (newName) handleRename(newName);
                   }}>rename</button>
@@ -209,7 +241,7 @@ export function NosqlManager() {
   );
 }
 
-function FieldsTab({ collectionId, onMessage }: { collectionId: string; onMessage: (s: string | null) => void }) {
+function FieldsTab({ collectionId, onMessage, canWrite }: { collectionId: string; onMessage: (s: string | null) => void; canWrite: boolean }) {
   const [meta, setMeta] = useState<CollectionMetaRecord | null>(null);
   useEffect(() => {
     nosqlAdapter.getCollectionMeta(collectionId).then((m) => setMeta(m ?? null));
@@ -238,7 +270,7 @@ function FieldsTab({ collectionId, onMessage }: { collectionId: string; onMessag
   if (!meta) return <div style={{ color: 'var(--fg-muted)' }}>no schema</div>;
   return (
     <div>
-      <button className="btn-primary" onClick={addField}>+ add field</button>
+      <button className="btn-primary" disabled={!canWrite} onClick={addField}>+ add field</button>
       <table className="ascii" style={{ marginTop: 8 }}>
         <thead><tr><th>#</th><th>name</th><th>type</th><th></th></tr></thead>
         <tbody>
@@ -247,7 +279,7 @@ function FieldsTab({ collectionId, onMessage }: { collectionId: string; onMessag
               <td>{i}</td>
               <td>{f.name}</td>
               <td>{f.type}</td>
-              <td><button onClick={() => removeField(i)}>×</button></td>
+              <td><button disabled={!canWrite} onClick={() => removeField(i)}>×</button></td>
             </tr>
           ))}
         </tbody>

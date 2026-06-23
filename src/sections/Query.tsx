@@ -4,12 +4,17 @@ import { sqlAdapter } from '../adapters/sqlAdapter';
 import { renderAsciiTable } from '../utils/asciiTable';
 
 export function Query() {
-  const [sql, setSql] = useState('SELECT name FROM sqlite_master WHERE type="table";');
+  const sql = useAppStore((s) => s.queryDraft);
+  const setSql = useAppStore((s) => s.setQueryDraft);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [result, setResult] = useState<{ columns: string[]; rows: unknown[][]; durationMs: number } | null>(null);
   const history = useAppStore((s) => s.queryHistory);
   const pushQuery = useAppStore((s) => s.pushQuery);
+  const ownership = useAppStore((s) => s.ownership);
+  const beginOperation = useAppStore((s) => s.beginOperation);
+  const endOperation = useAppStore((s) => s.endOperation);
   const activeSqlId = useAppStore((s) => s.activeSqlDbId);
   const activeNosqlId = useAppStore((s) => s.activeNosqlId);
   const sqlDbs = useAppStore((s) => s.sqlDbs);
@@ -38,20 +43,33 @@ export function Query() {
   }
 
   async function run() {
-    setError(null); setBusy(true);
+    if (busy) return;
+    const mutation = mayMutateSql(sql);
+    if (mutation && ownership.status !== 'writable') {
+      setError('This tab is read-only. Take over write access before running SQL that changes data.');
+      return;
+    }
+    setError(null); setNotice(null); setBusy(true);
+    beginOperation(mutation ? 'mutation' : 'query');
     try {
       const r = await sqlAdapter.exec(activeSqlId!, sql);
       if (!r.columns.length) {
         setResult({ columns: [], rows: [], durationMs: r.durationMs });
-        setError(`(no rows) · duration ${r.durationMs.toFixed(1)} ms`);
+        setNotice(`No result rows · ${r.durationMs.toFixed(1)} ms`);
       } else {
         setResult({ columns: r.columns, rows: r.rows, durationMs: r.durationMs });
       }
       pushQuery(sql, activeSqlId);
     } catch (err) {
-      setError((err as Error).message);
+      const message = (err as Error).message;
+      setError(message);
       setResult(null);
-    } finally { setBusy(false); }
+      endOperation(mutation ? 'mutation' : 'query', message);
+      setBusy(false);
+      return;
+    }
+    endOperation(mutation ? 'mutation' : 'query');
+    setBusy(false);
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -75,9 +93,12 @@ export function Query() {
           <textarea id="query-sql" name="sql" aria-label="SQL editor" value={sql} onChange={(e) => setSql(e.target.value)} onKeyDown={onKeyDown}
             style={{ minHeight: 140, fontFamily: 'var(--font-mono)' }} />
           <div className="btn-row" style={{ marginTop: 8 }}>
-            <button className="btn-primary" onClick={run} disabled={busy}>{busy ? 'running…' : '▶ Run (Ctrl/Cmd+Enter)'}</button>
+            <button className="btn-primary" onClick={run} disabled={busy || (mayMutateSql(sql) && ownership.status !== 'writable')}>
+              {busy ? 'running...' : 'Run (Ctrl/Cmd+Enter)'}
+            </button>
             <button onClick={() => setSql('')}>clear</button>
           </div>
+          {notice && <div className="banner" style={{ marginTop: 8 }}>{notice}</div>}
           {error && <div className="banner danger" style={{ marginTop: 8 }}>{error}</div>}
           <pre style={{
             marginTop: 8,
@@ -109,4 +130,17 @@ export function Query() {
       </div>
     </div>
   );
+}
+
+function mayMutateSql(sql: string): boolean {
+  const normalized = sql
+    .replace(/--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\//g, '')
+    .toUpperCase();
+  return normalized.split(';').some((statement) => {
+    const value = statement.trim();
+    if (!value) return false;
+    if (/^(SELECT|EXPLAIN)\b/.test(value)) return false;
+    if (/^PRAGMA\b/.test(value) && !value.includes('=')) return false;
+    return true;
+  });
 }

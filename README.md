@@ -7,14 +7,63 @@ A 100% client-side, single-user database manager for the browser. Built per `bdp
 ## Quickstart
 
 ```bash
-npm install         # also copies sql.js wasm into public/sql-wasm/
+npm ci              # requires the registry, or a previously populated npm cache
 npm run dev         # http://localhost:5173
 npm run typecheck   # tsc -b --noEmit
 npm test            # vitest run
 npm run build       # static build to dist/
+npm run serve       # serve dist/ locally at http://127.0.0.1:4173
 ```
 
-That is the entire CLI surface. No backend, no remote calls, no analytics.
+The production build uses relative asset URLs and precaches itself after the
+first HTTP load, so reloads continue to work without a network connection.
+Browsers do not support service workers from `file://`; use `npm run serve`
+for a local offline copy. A cold `npm ci --offline` still requires a populated
+npm cache because third-party packages are not vendored in this repository.
+
+No backend, remote application calls, or analytics are used.
+
+## GitHub Pages Offline Workflow
+
+This is the office-safe path when you cannot install Node.js, Python,
+PowerShell launchers, desktop apps, or local servers.
+
+The repository publishes the production build to GitHub Pages through
+`.github/workflows/pages.yml`. The app is still local-first: GitHub Pages only
+serves the static files. Your databases stay in your browser's IndexedDB.
+
+### One-time repository setup
+
+1. Push this repository to GitHub.
+2. In GitHub, open the repository `Settings`.
+3. Open `Pages`.
+4. Under `Build and deployment`, set `Source` to `GitHub Actions`.
+5. Push to `main`, or run the `Deploy GitHub Pages` workflow manually from the
+   repository `Actions` tab.
+6. When the workflow finishes, open the Pages URL shown in the deploy summary.
+
+For this repository, the expected URL shape is:
+
+```text
+https://erchulo.github.io/bdp-personal-db/
+```
+
+### First use at the office
+
+1. Open the GitHub Pages URL while online.
+2. Wait for the app to finish loading.
+3. Refresh once while still online. This gives the service worker a chance to
+   take control of the page after installation.
+4. Bookmark the GitHub Pages URL.
+5. Create a small test SQL DB and run a query.
+6. Disconnect from the network or switch the browser offline.
+7. Open the bookmark again.
+
+Expected result: the app shell loads from the browser cache and your local data
+is still present.
+
+Use the same browser and browser profile. Clearing site data, using private
+browsing, or switching browsers will remove or hide the local IndexedDB data.
 
 ## Keyboard
 
@@ -97,6 +146,9 @@ Storage lives in two places:
 - Theme tokens are CSS variables under `:root[data-theme=…]`. Don't introduce new colours inline.
 - ASCII tables use `┌ ┐ └ ┘ ─ │ ┬ ┴ ├ ┤ ┼` consistently.
 - Errors render in the red `banner danger` class; never silent.
+
+Project governance and non-negotiable engineering principles are defined in
+`.specify/memory/constitution.md`.
 
 ## Out of scope
 

@@ -14,6 +14,8 @@ export function ExportPanel() {
   const sqlDbs = useAppStore((s) => s.sqlDbs);
   const collections = useAppStore((s) => s.nosqlCollections);
   const pushRecent = useAppStore((s) => s.pushRecent);
+  const beginOperation = useAppStore((s) => s.beginOperation);
+  const endOperation = useAppStore((s) => s.endOperation);
   const [source, setSource] = useState<'sql' | 'nosql'>('sql');
   const [sqlId, setSqlId] = useState<string>('');
   const [colId, setColId] = useState<string>('');
@@ -24,6 +26,8 @@ export function ExportPanel() {
 
   async function run() {
     setError(null); setInfo(null); setBusy(true);
+    let operationError: string | undefined;
+    beginOperation('export');
     try {
       if (source === 'sql') {
         if (!sqlId) throw new Error('pick a SQL DB');
@@ -55,7 +59,7 @@ export function ExportPanel() {
           setInfo('exported SQL dump');
         } else if (format === 'bdp') {
           const rawBytes = await sqlAdapter.export(sqlId);
-          const zip = buildArchive({ items: [{ kind: 'sql', id: sqlId, name: dbName, data: rawBytes }] });
+          const zip = await buildArchive({ items: [{ kind: 'sql', id: sqlId, name: dbName, data: rawBytes }] });
           triggerDownload(new Blob([zip as Uint8Array<ArrayBuffer>], { type: 'application/zip' }), `${dbName}.bdp`);
           setInfo('exported .bdp');
         }
@@ -87,7 +91,7 @@ export function ExportPanel() {
           setInfo('exported SQL dump');
         } else if (format === 'bdp') {
           const jsonl = docs.map((d) => JSON.stringify(d)).join('\n');
-          const zip = buildArchive({
+          const zip = await buildArchive({
             items: [{ kind: 'nosql', id: colId, name: meta.name, fields: meta.fields.map((f) => f.name), data: strToU8(jsonl) }],
           });
           triggerDownload(new Blob([zip as Uint8Array<ArrayBuffer>], { type: 'application/zip' }), `${meta.name}.bdp`);
@@ -97,8 +101,12 @@ export function ExportPanel() {
       const label = `${source === 'sql' ? sqlDbs.find((d) => d.id === sqlId)?.name : collections.find((c) => c.id === colId)?.name} → ${format}`;
       pushRecent(`exported ${label}`);
     } catch (err) {
-      setError((err as Error).message);
-    } finally { setBusy(false); }
+      operationError = (err as Error).message;
+      setError(operationError);
+    } finally {
+      endOperation('export', operationError);
+      setBusy(false);
+    }
   }
 
   return (

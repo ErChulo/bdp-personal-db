@@ -1,4 +1,5 @@
 /** Helpers for importing/exporting native SQLite files via sql.js. */
+import { ensureFileWithinLimit } from './fileIntake';
 
 export function isProbablySqlite(bytes: Uint8Array): boolean {
   // SQLite magic header: "SQLite format 3\0"
@@ -8,6 +9,7 @@ export function isProbablySqlite(bytes: Uint8Array): boolean {
 }
 
 export async function readSqliteFile(file: File): Promise<Uint8Array> {
+  ensureFileWithinLimit(file, file.name);
   const buf = await file.arrayBuffer();
   return new Uint8Array(buf);
 }

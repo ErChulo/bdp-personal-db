@@ -9,7 +9,6 @@ import { uid } from '../utils/schema';
 type Tab = 'schema' | 'data' | 'indexes' | 'settings';
 
 export function SqlManager() {
-  const [tab, setTab] = useState<Tab>('schema');
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newSchema, setNewSchema] = useState('CREATE TABLE example (id INTEGER PRIMARY KEY, name TEXT);');
@@ -18,18 +17,25 @@ export function SqlManager() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [schema, setSchema] = useState<SqlTableInfo[]>([]);
-  const [activeTable, setActiveTable] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [pageSize] = useState(50);
   const [rowsData, setRowsData] = useState<{ columns: string[]; rows: unknown[][]; total: number } | null>(null);
   const sqlDbs = useAppStore((s) => s.sqlDbs);
   const activeId = useAppStore((s) => s.activeSqlDbId);
+  const activeTable = useAppStore((s) => s.activeSqlTable);
+  const tab = useAppStore((s) => s.sqlManagerTab);
+  const ownership = useAppStore((s) => s.ownership);
   const setActive = useAppStore((s) => s.setActiveSqlDb);
+  const setActiveTable = useAppStore((s) => s.setActiveSqlTable);
+  const setTab = useAppStore((s) => s.setSqlManagerTab);
   const upsert = useAppStore((s) => s.upsertSqlDb);
   const remove = useAppStore((s) => s.removeSqlDb);
   const pushRecent = useAppStore((s) => s.pushRecent);
+  const beginOperation = useAppStore((s) => s.beginOperation);
+  const endOperation = useAppStore((s) => s.endOperation);
 
   const activeName = useMemo(() => sqlDbs.find((d) => d.id === activeId)?.name ?? null, [sqlDbs, activeId]);
+  const canWrite = ownership.status === 'writable';
 
   useEffect(() => {
     if (!activeId || tab === 'settings') return;
@@ -63,23 +69,29 @@ export function SqlManager() {
 
   async function handleCreate() {
     setError(null); setInfo(null);
+    if (!canWrite) return setError('This tab is read-only. Take over write access before creating a SQL DB.');
     const name = newName.trim();
     if (!name) return setError('name is required');
     const id = 'sql_' + uid();
     try {
       setBusy(true);
+      beginOperation('mutation');
       await sqlAdapter.create(id, newSchema.trim() || undefined);
       const bytes = await sqlAdapter.export(id);
       const now = Date.now();
-      await sqlStore.write(id, { bytes, name, createdAt: now, updatedAt: now });
+      await sqlStore.write(id, { bytes, name, createdAt: now, updatedAt: now, revision: 1, checksum: '' });
       upsert({ id, name, createdAt: now, updatedAt: now });
       setInfo(`created '${name}'`);
       setCreating(false);
       setNewName('');
       setNewSchema('CREATE TABLE example (id INTEGER PRIMARY KEY, name TEXT);');
       pushRecent(`created SQL DB "${name}"`);
+      endOperation('mutation');
     } catch (err) {
-      setError((err as Error).message);
+      const message = (err as Error).message;
+      setError(message);
+      endOperation('mutation', message);
+      return;
     } finally {
       setBusy(false);
     }
@@ -87,19 +99,25 @@ export function SqlManager() {
 
   async function handleImport() {
     if (!importFile) return;
+    if (!canWrite) return setError('This tab is read-only. Take over write access before importing a SQL DB.');
     setError(null); setInfo(null); setBusy(true);
     try {
+      beginOperation('import');
       const bytes = new Uint8Array(await importFile.arrayBuffer());
       const id = 'sql_' + uid();
       await sqlAdapter.importBytes(id, bytes);
       const now = Date.now();
       const name = importFile.name.replace(/\.(sqlite|db)$/i, '');
-      await sqlStore.write(id, { bytes, name, createdAt: now, updatedAt: now });
+      await sqlStore.write(id, { bytes, name, createdAt: now, updatedAt: now, revision: 1, checksum: '' });
       upsert({ id, name, createdAt: now, updatedAt: now });
       setInfo(`imported ${importFile.name}`);
       pushRecent(`imported SQL DB "${importFile.name}"`);
+      endOperation('import');
     } catch (err) {
-      setError((err as Error).message);
+      const message = (err as Error).message;
+      setError(message);
+      endOperation('import', message);
+      return;
     } finally {
       setBusy(false); setImportFile(null);
     }
@@ -107,17 +125,23 @@ export function SqlManager() {
 
   async function handleDelete() {
     if (!activeId || !activeName) return;
+    if (!canWrite) return setError('This tab is read-only. Take over write access before deleting a SQL DB.');
     if (!confirm(`Delete SQL DB "${activeName}"? This cannot be undone (export first if you want to preserve).`)) return;
     try {
       setBusy(true);
+      beginOperation('mutation');
       await sqlAdapter.drop(activeId);
       await sqlStore.remove(activeId);
       remove(activeId);
       pushRecent(`deleted SQL DB "${activeName}"`);
       setInfo(`deleted ${activeName}`);
       setActiveTable(null);
+      endOperation('mutation');
     } catch (err) {
-      setError((err as Error).message);
+      const message = (err as Error).message;
+      setError(message);
+      endOperation('mutation', message);
+      return;
     } finally {
       setBusy(false);
     }
@@ -125,8 +149,10 @@ export function SqlManager() {
 
   async function handleVacuum() {
     if (!activeId) return;
+    if (!canWrite) return setError('This tab is read-only. Take over write access before vacuuming a SQL DB.');
     setBusy(true); setError(null);
     try {
+      beginOperation('mutation');
       await sqlAdapter.vacuum(activeId);
       const bytes = await sqlAdapter.export(activeId);
       const rec = (await sqlStore.read(activeId));
@@ -136,20 +162,35 @@ export function SqlManager() {
         name: rec?.name ?? 'unknown',
         createdAt: rec?.createdAt ?? now,
         updatedAt: now,
+        revision: (rec?.revision ?? 0) + 1,
+        checksum: '',
       });
       setInfo('vacuum complete');
-    } catch (err) { setError((err as Error).message); }
+      endOperation('mutation');
+    } catch (err) {
+      const message = (err as Error).message;
+      setError(message);
+      endOperation('mutation', message);
+      return;
+    }
     finally { setBusy(false); }
   }
 
   async function handleExport() {
     if (!activeId || !activeName) return;
     try {
+      beginOperation('export');
       const blobBytes = await sqlAdapter.export(activeId);
       triggerDownload(new Blob([blobBytes], { type: 'application/octet-stream' }), `${activeName}.sqlite`);
       setInfo('exported');
       pushRecent(`exported SQL DB "${activeName}"`);
-    } catch (err) { setError((err as Error).message); }
+    } catch (err) {
+      const message = (err as Error).message;
+      setError(message);
+      endOperation('export', message);
+      return;
+    }
+    endOperation('export');
   }
 
   return (
@@ -162,7 +203,7 @@ export function SqlManager() {
       <div className="split section-content" style={{ padding: 0 }}>
         <div className="list-pane">
           <div style={{ padding: 8, borderBottom: '1px solid var(--border)' }}>
-            <button className="btn-primary" onClick={() => setCreating(true)}>+ New SQL DB</button>{' '}
+            <button className="btn-primary" onClick={() => setCreating(true)} disabled={!canWrite}>+ New SQL DB</button>{' '}
             <label className="btn-row" style={{ display: 'inline-block' }}>
               <input
                 id="sql-importFile"
@@ -172,7 +213,7 @@ export function SqlManager() {
                 style={{ display: 'none' }}
                 onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
               />
-              <button onClick={(e) => (e.currentTarget.previousElementSibling as HTMLInputElement).click()}>
+              <button disabled={!canWrite} onClick={(e) => (e.currentTarget.previousElementSibling as HTMLInputElement).click()}>
                 ↑ Import .sqlite
               </button>
             </label>
@@ -197,7 +238,7 @@ export function SqlManager() {
               <label htmlFor="sql-newSchema" style={{ display: 'block', marginTop: 6 }}>initial schema (optional)</label>
               <textarea id="sql-newSchema" name="newSchema" value={newSchema} onChange={(e) => setNewSchema(e.target.value)} style={{ minHeight: 80 }} />
               <div className="btn-row" style={{ marginTop: 6 }}>
-                <button className="btn-primary" disabled={busy} onClick={handleCreate}>create</button>
+                <button className="btn-primary" disabled={busy || !canWrite} onClick={handleCreate}>create</button>
                 <button onClick={() => setCreating(false)}>cancel</button>
               </div>
             </div>
@@ -206,7 +247,7 @@ export function SqlManager() {
             <div style={{ padding: 10, borderTop: '1px solid var(--border)' }}>
               <div>file: {importFile.name}</div>
               <div className="btn-row" style={{ marginTop: 6 }}>
-                <button className="btn-primary" disabled={busy} onClick={handleImport}>import</button>
+                <button className="btn-primary" disabled={busy || !canWrite} onClick={handleImport}>import</button>
                 <button onClick={() => setImportFile(null)}>cancel</button>
               </div>
             </div>
@@ -246,8 +287,8 @@ export function SqlManager() {
                 {tab === 'settings' && (
                   <div className="btn-row">
                     <button className="btn-primary" onClick={handleExport}>export .sqlite</button>
-                    <button onClick={handleVacuum}>vacuum</button>
-                    <button className="btn-danger" onClick={handleDelete}>delete</button>
+                    <button disabled={!canWrite || busy} onClick={handleVacuum}>vacuum</button>
+                    <button className="btn-danger" disabled={!canWrite || busy} onClick={handleDelete}>delete</button>
                   </div>
                 )}
               </div>

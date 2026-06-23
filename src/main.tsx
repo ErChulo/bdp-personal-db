@@ -12,3 +12,14 @@ createRoot(container).render(
     <App />
   </StrictMode>,
 );
+
+// A service worker needs an HTTP(S) origin. `npm run serve` provides one for
+// local, disconnected use; file:// is intentionally unsupported by browsers.
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  window.addEventListener('load', () => {
+    const url = new URL('sw.js', document.baseURI);
+    navigator.serviceWorker.register(url, { scope: './' }).catch((error: unknown) => {
+      console.warn('Offline cache registration failed:', error);
+    });
+  });
+}

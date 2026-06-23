@@ -8,6 +8,8 @@ interface Node { id: string; label: string; rows: number; }
 export function SchemaDiff() {
   const sqlDbs = useAppStore((s) => s.sqlDbs);
   const collections = useAppStore((s) => s.nosqlCollections);
+  const beginOperation = useAppStore((s) => s.beginOperation);
+  const endOperation = useAppStore((s) => s.endOperation);
   const [leftId, setLeftId] = useState<string>('');
   const [rightId, setRightId] = useState<string>('');
   const [leftTables, setLeftTables] = useState<SqlTableInfo[]>([]);
@@ -15,13 +17,27 @@ export function SchemaDiff() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (leftId) sqlAdapter.schema(leftId).then((s) => setLeftTables(s.tables)).catch((e) => setError((e as Error).message));
-    else setLeftTables([]);
-  }, [leftId]);
+    if (!leftId) { setLeftTables([]); return; }
+    beginOperation('query');
+    sqlAdapter.schema(leftId)
+      .then((s) => { setLeftTables(s.tables); endOperation('query'); })
+      .catch((e) => {
+        const message = (e as Error).message;
+        setError(message);
+        endOperation('query', message);
+      });
+  }, [leftId, beginOperation, endOperation]);
   useEffect(() => {
-    if (rightId) sqlAdapter.schema(rightId).then((s) => setRightTables(s.tables)).catch((e) => setError((e as Error).message));
-    else setRightTables([]);
-  }, [rightId]);
+    if (!rightId) { setRightTables([]); return; }
+    beginOperation('query');
+    sqlAdapter.schema(rightId)
+      .then((s) => { setRightTables(s.tables); endOperation('query'); })
+      .catch((e) => {
+        const message = (e as Error).message;
+        setError(message);
+        endOperation('query', message);
+      });
+  }, [rightId, beginOperation, endOperation]);
 
   const leftNodes: Node[] = useMemo(() => leftTables.map((t) => ({ id: t.name, label: t.name, rows: t.rowCount })), [leftTables]);
   const rightNodes: Node[] = useMemo(() => rightTables.map((t) => ({ id: t.name, label: t.name, rows: t.rowCount })), [rightTables]);

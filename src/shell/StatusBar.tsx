@@ -1,5 +1,7 @@
 import { useEffect } from 'react';
 import { useAppStore } from './store';
+import { requestSkipWaiting } from '../workspace/update';
+import { requestWorkspaceTakeover } from '../workspace/lease';
 
 export function StatusBar() {
   const section = useAppStore((s) => s.section);
@@ -9,6 +11,10 @@ export function StatusBar() {
   const activeNosqlId = useAppStore((s) => s.activeNosqlId);
   const estimate = useAppStore((s) => s.storageEstimate);
   const setEstimate = useAppStore((s) => s.setStorageEstimate);
+  const setOwnership = useAppStore((s) => s.setOwnership);
+  const ownership = useAppStore((s) => s.ownership);
+  const updateState = useAppStore((s) => s.updateState);
+  const operations = useAppStore((s) => s.operations);
 
   useEffect(() => {
     if (!navigator.storage || !navigator.storage.estimate) return;
@@ -31,11 +37,19 @@ export function StatusBar() {
   const activeSqlName = sqlDbs.find((d) => d.id === activeSqlId)?.name ?? '—';
   const activeNosqlName = nosql.find((c) => c.id === activeNosqlId)?.name ?? '—';
   const used = estimate ? Math.min(100, Math.round((estimate.usageMB / Math.max(1, estimate.quotaMB)) * 100)) : 0;
+  const canApplyUpdate = updateState.status !== 'reloading' && operations.activeCount === 0;
+
+  function takeOver() {
+    if (!confirm('Take over write access in this tab? Other open tabs become read-only for mutations.')) return;
+    requestWorkspaceTakeover(setOwnership);
+  }
 
   return (
     <div className="status-bar" role="status" aria-live="polite">
       <span className="brand">◉ BDP</span>
-      <span className="pill online">ONLINE</span>
+      <span className={`pill ${ownership.status === 'writable' ? 'online' : 'warn'}`}>
+        {ownership.status === 'writable' ? 'WRITABLE' : 'READ-ONLY'}
+      </span>
       <span>
         § <span style={{ color: 'var(--fg)' }}>{section}</span>
       </span>
@@ -46,6 +60,25 @@ export function StatusBar() {
         NoSQL: <span style={{ color: 'var(--accent)' }}>{nosql.length}</span> ({activeNosqlName})
       </span>
       <span className="grow" />
+      {operations.activeCount > 0 && <span>busy {operations.activeCount}</span>}
+      {operations.lastError && operations.activeCount === 0 && (
+        <span title={operations.lastError} style={{ color: 'var(--danger)' }}>last error</span>
+      )}
+      {updateState.status !== 'current' && (
+        <button
+          className="pill"
+          onClick={() => void requestSkipWaiting(updateState.buildId)}
+          disabled={!canApplyUpdate}
+          aria-label="Apply ready update"
+        >
+          update ready
+        </button>
+      )}
+      {ownership.status !== 'writable' && (
+        <button className="pill" onClick={takeOver} disabled={ownership.status === 'acquiring' || operations.activeCount > 0} title={ownership.message ?? undefined}>
+          take over
+        </button>
+      )}
       {estimate && (
         <span>
           IDB {estimate.usageMB} / {estimate.quotaMB} MB ({used}%)
