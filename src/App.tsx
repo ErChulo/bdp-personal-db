@@ -23,6 +23,7 @@ import { KeyGen } from './sections/KeyGen';
 import { SearchPanel } from './sections/SearchPanel';
 import { Backup } from './sections/Backup';
 import { SchemaDiff } from './sections/SchemaDiff';
+import coquiLogo from './assets/coqui-negro.jpg';
 import type { ReactNode } from 'react';
 import type { SectionId } from './shell/store';
 
@@ -263,6 +264,7 @@ function StartupOverlay() {
   return (
     <div className="startup-overlay" role="status" aria-live="polite">
       <div className="startup-panel">
+        <img src={coquiLogo} alt="" className="startup-logo" />
         <div className="startup-mark" aria-hidden="true">
           <span />
           <span />

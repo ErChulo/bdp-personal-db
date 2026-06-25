@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { SectionStateBanner } from './SectionState';
+import coquiLogo from '../assets/coqui-negro.jpg';
 
 export function VaultGate({
   mode,
@@ -65,7 +66,7 @@ export function VaultGate({
   return (
     <div className="vault-gate">
       <div className="vault-card">
-        <div className="vault-mark" aria-hidden="true">◉</div>
+        <img src={coquiLogo} alt="" className="vault-logo" />
         <h1>{mode === 'setup' ? 'Set up local vault' : 'Unlock local vault'}</h1>
         <p>
           BDP stores your data locally. The vault passphrase keeps SQL and NoSQL content encrypted at rest until you unlock it in this browser profile.
