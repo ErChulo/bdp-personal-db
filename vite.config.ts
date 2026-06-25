@@ -78,12 +78,12 @@ export default defineConfig({
   },
   build: {
     target: 'es2022',
+    cssCodeSplit: false,
+    assetsInlineLimit: Number.MAX_SAFE_INTEGER,
     sourcemap: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          dexie: ['dexie'],
-        },
+        inlineDynamicImports: true,
       },
     },
   },

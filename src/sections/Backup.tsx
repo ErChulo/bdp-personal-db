@@ -3,7 +3,7 @@ import { useAppStore } from '../shell/store';
 import { sqlAdapter } from '../adapters/sqlAdapter';
 import { sqlStore } from '../adapters/sqlStore';
 import { nosqlAdapter, type CollectionMetaRecord } from '../adapters/nosqlAdapter';
-import { buildArchive, readArchive } from '../importExport/bdpArchive';
+import { buildArchive, formatBytes, readArchive, summarizeTransfer } from '../importExport/bdpArchive';
 import { ensureFileWithinLimit } from '../importExport/fileIntake';
 import { uid } from '../utils/schema';
 import { strFromU8 } from 'fflate';
@@ -31,25 +31,47 @@ export function Backup() {
     beginOperation('backup');
     try {
       const items: { kind: 'sql' | 'nosql'; id: string; name: string; fields?: string[]; data: Uint8Array }[] = [];
+      const summaries: { name: string; itemCount: number; byteLength: number; failedEntries: string[] }[] = [];
+      const failures: string[] = [];
       for (const db of sqlDbs) {
-        const bytes = await sqlAdapter.export(db.id);
-        items.push({ kind: 'sql', id: db.id, name: db.name, data: bytes });
+        try {
+          const schema = await sqlAdapter.schema(db.id);
+          const tableCount = schema.tables.filter((t) => t.columns.length > 0).length;
+          const bytes = await sqlAdapter.export(db.id);
+          items.push({ kind: 'sql', id: db.id, name: db.name, data: bytes });
+          summaries.push({ name: db.name, itemCount: tableCount, byteLength: bytes.byteLength, failedEntries: [] });
+        } catch (err) {
+          failures.push(`SQL "${db.name}": ${(err as Error).message}`);
+        }
       }
       for (const c of collections) {
-        const docs = await nosqlAdapter.listDocs(c.id, { limit: Number.MAX_SAFE_INTEGER });
-        const text = docs.length ? docs.map((d) => JSON.stringify(d)).join('\n') : '';
-        items.push({ kind: 'nosql', id: c.id, name: c.name, fields: c.fieldNames, data: textEncoder(text) });
+        try {
+          const docs = await nosqlAdapter.listDocs(c.id, { limit: Number.MAX_SAFE_INTEGER });
+          const text = docs.length ? docs.map((d) => JSON.stringify(d)).join('\n') : '';
+          const data = textEncoder(text);
+          items.push({ kind: 'nosql', id: c.id, name: c.name, fields: c.fieldNames, data });
+          summaries.push({ name: c.name, itemCount: docs.length, byteLength: data.byteLength, failedEntries: [] });
+        } catch (err) {
+          failures.push(`NoSQL "${c.name}": ${(err as Error).message}`);
+        }
+      }
+      if (items.length === 0) {
+        throw new Error(failures.length ? `no snapshot sources could be read; failed: ${failures.join('; ')}` : 'no data available to snapshot');
       }
       const zip = await buildArchive({ items, origin: 'bdp-backup' });
       const blob = new Blob([zip as Uint8Array<ArrayBuffer>], { type: 'application/zip' });
+      const summary = summarizeTransfer(summaries);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `${label.trim() || 'bdp-snapshot'}-${isoDate()}.bdp`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setInfo('snapshot created');
-      pushRecent(`snapshot ${items.length} items → .bdp`);
+      setInfo(buildSnapshotInfo(summary, blob.size, failures));
+      pushRecent(`${failures.length > 0 ? 'partial ' : ''}snapshot ${summary.sourceCount} sources → .bdp`);
+      if (failures.length > 0) {
+        setError(`partial backup: ${failures.join('; ')}`);
+      }
     } catch (err) {
       operationError = (err as Error).message;
       setError(operationError);
@@ -209,6 +231,19 @@ export function Backup() {
 
 function isoDate(): string {
   return new Date().toISOString().replace(/[:.]/g, '-');
+}
+
+function buildSnapshotInfo(
+  summary: { sourceCount: number; totalItems: number; totalBytes: number; failedEntries: string[]; sources: { name: string; itemCount: number; byteLength: number }[] },
+  downloadBytes: number,
+  failures: string[],
+): string {
+  const sources = summary.sources
+    .map((source) => `${source.name} [${source.itemCount} ${source.itemCount === 1 ? 'item' : 'items'} · ${formatBytes(source.byteLength)}]`)
+    .join(', ');
+  const prefix = failures.length > 0 ? 'partial backup' : 'snapshot created';
+  const failureText = failures.length > 0 ? `; failed: ${failures.join('; ')}` : '';
+  return `${prefix}: ${sources} (${summary.sourceCount} sources, ${summary.totalItems} items, ${formatBytes(downloadBytes)})${failureText}`;
 }
 
 function textEncoder(s: string): Uint8Array {

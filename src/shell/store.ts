@@ -4,9 +4,11 @@ import { beginOperation, createInitialWorkspaceOperationState, endOperation } fr
 import type {
   WorkspaceOperationKind,
   WorkspaceOperationState,
+  OfflineReadinessState,
   WorkspaceOwnershipState,
   WorkspaceUpdateState,
 } from '../workspace/types';
+import type { VaultState } from '../security/vaultTypes';
 
 export type SectionId =
   | 'dashboard'
@@ -42,6 +44,7 @@ export interface NosqlCollectionHandle {
 interface AppState {
   // sections
   section: SectionId;
+  lastSection: SectionId;
   // SQL state
   sqlDbs: SqlDbHandle[];
   activeSqlDbId: string | null;
@@ -64,7 +67,9 @@ interface AppState {
   // workspace coordination
   ownership: WorkspaceOwnershipState;
   updateState: WorkspaceUpdateState;
+  offlineReadiness: OfflineReadinessState;
   operations: WorkspaceOperationState;
+  vault: VaultState;
 
   // setters
   setSection: (s: SectionId) => void;
@@ -86,14 +91,17 @@ interface AppState {
   setStorageEstimate: (e: { usageMB: number; quotaMB: number } | null) => void;
   setOwnership: (state: WorkspaceOwnershipState) => void;
   setUpdateState: (state: WorkspaceUpdateState) => void;
+  setOfflineReadiness: (state: OfflineReadinessState) => void;
   beginOperation: (kind: WorkspaceOperationKind) => void;
   endOperation: (kind: WorkspaceOperationKind, error?: string) => void;
+  setVaultState: (state: VaultState) => void;
 }
 
 export const useAppStore = create<AppState>()(
   persist(
     (set) => ({
       section: 'dashboard',
+      lastSection: 'dashboard',
       sqlDbs: [],
       activeSqlDbId: null,
       activeSqlTable: null,
@@ -110,9 +118,21 @@ export const useAppStore = create<AppState>()(
       storageEstimate: null,
       ownership: { status: 'acquiring', tabId: '', writerEpoch: 0, message: null },
       updateState: { status: 'current', buildId: null, message: null },
+      offlineReadiness: {
+        status: 'online-only',
+        controlled: false,
+        cached: false,
+        online: typeof navigator === 'undefined' ? true : navigator.onLine,
+        message: 'Offline cache is not verified yet',
+      },
       operations: createInitialWorkspaceOperationState(),
+      vault: { phase: 'checking', hasVault: false, message: null },
 
-      setSection: (s) => set({ section: s }),
+      setSection: (s) =>
+        set((state) => ({
+          lastSection: state.section,
+          section: s,
+        })),
       setActiveSqlDb: (id) => set({ activeSqlDbId: id }),
       setActiveSqlTable: (table) => set({ activeSqlTable: table }),
       setSqlManagerTab: (tab) => set({ sqlManagerTab: tab }),
@@ -161,10 +181,12 @@ export const useAppStore = create<AppState>()(
       setStorageEstimate: (e) => set({ storageEstimate: e }),
       setOwnership: (state) => set({ ownership: state }),
       setUpdateState: (state) => set({ updateState: state }),
+      setOfflineReadiness: (state) => set({ offlineReadiness: state }),
       beginOperation: (kind) =>
         set((state) => ({ operations: beginOperation(state.operations, kind) })),
       endOperation: (kind, error) =>
         set((state) => ({ operations: endOperation(state.operations, kind, error) })),
+      setVaultState: (state) => set({ vault: state }),
     }),
     {
       name: 'bdp-meta',
@@ -173,6 +195,7 @@ export const useAppStore = create<AppState>()(
         theme: state.theme,
         layout: state.layout,
         section: state.section,
+        lastSection: state.lastSection,
         activeSqlDbId: state.activeSqlDbId,
         activeSqlTable: state.activeSqlTable,
         sqlManagerTab: state.sqlManagerTab,
@@ -180,6 +203,7 @@ export const useAppStore = create<AppState>()(
         activeNosqlId: state.activeNosqlId,
         recent: state.recent.slice(0, 20),
         queryHistory: state.queryHistory.slice(0, 50),
+        // Vault state is intentionally ephemeral and re-derived on startup.
       }),
     },
   ),

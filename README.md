@@ -15,11 +15,19 @@ npm run build       # static build to dist/
 npm run serve       # serve dist/ locally at http://127.0.0.1:4173
 ```
 
-The production build uses relative asset URLs and precaches itself after the
-first HTTP load, so reloads continue to work without a network connection.
-Browsers do not support service workers from `file://`; use `npm run serve`
-for a local offline copy. A cold `npm ci --offline` still requires a populated
-npm cache because third-party packages are not vendored in this repository.
+The production build is self-contained and can be opened directly from
+`dist/index.html` with `file://`. If you serve it over HTTP, the app also
+enables service-worker caching after the first load. A cold
+`npm ci --offline` still requires a populated npm cache because third-party
+packages are not vendored in this repository.
+
+Recommended app flow:
+
+1. Open Dashboard and create or select a SQL database or NoSQL collection.
+2. Use Query, Reports, Search, and Schema Diff for local inspection.
+3. Use Import / Export / Backup for file moves and recovery.
+4. Watch the status bar for writable-vs-read-only ownership, offline readiness,
+   and update prompts.
 
 No backend, remote application calls, or analytics are used.
 
@@ -30,7 +38,8 @@ PowerShell launchers, desktop apps, or local servers.
 
 The repository publishes the production build to GitHub Pages through
 `.github/workflows/pages.yml`. The app is still local-first: GitHub Pages only
-serves the static files. Your databases stay in your browser's IndexedDB.
+serves the static files, and the downloadable build remains a single
+self-contained HTML file. Your databases stay in your browser's storage.
 
 ### One-time repository setup
 
@@ -41,6 +50,8 @@ serves the static files. Your databases stay in your browser's IndexedDB.
 5. Push to `main`, or run the `Deploy GitHub Pages` workflow manually from the
    repository `Actions` tab.
 6. When the workflow finishes, open the Pages URL shown in the deploy summary.
+   If you only need the offline bundle, download `dist/index.html` from the
+   build artifacts or repo release and open it directly.
 
 For this repository, the expected URL shape is:
 
@@ -50,20 +61,25 @@ https://erchulo.github.io/bdp-personal-db/
 
 ### First use at the office
 
-1. Open the GitHub Pages URL while online.
+1. Open the GitHub Pages URL while online, or open the standalone
+   `dist/index.html` file directly.
 2. Wait for the app to finish loading.
-3. Refresh once while still online. This gives the service worker a chance to
-   take control of the page after installation.
-4. Bookmark the GitHub Pages URL.
+3. If you are using GitHub Pages, refresh once while still online so the
+   service worker can take control of the page after installation.
+4. Bookmark the GitHub Pages URL or keep the local file handy.
 5. Create a small test SQL DB and run a query.
 6. Disconnect from the network or switch the browser offline.
-7. Open the bookmark again.
+7. Open the bookmark again, or reopen the local file.
 
-Expected result: the app shell loads from the browser cache and your local data
-is still present.
+Expected result: the app shell loads from cache or from the standalone HTML
+file, and your local data is still present.
+
+If the status bar shows a newer update is ready, finish the current operation
+first, then accept the update prompt so the app reloads once in a controlled
+way.
 
 Use the same browser and browser profile. Clearing site data, using private
-browsing, or switching browsers will remove or hide the local IndexedDB data.
+browsing, or switching browsers will remove or hide the local storage data.
 
 ## Keyboard
 
@@ -85,14 +101,14 @@ Inside Query, **Ctrl/Cmd+Enter** runs the current SQL.
 
 ## What it does
 
-- **SQL Manager (F2)** — create / open / import SQLite databases with sql.js running in a Web Worker.
-- **NoSQL Manager (F3)** — declare collections with typed fields (string / number / boolean / date / json) on Dexie/IndexedDB.
-- **Query (F4)** — write SQL against the active DB; results render as ASCII tables; history persisted.
-- **Import (F5)** — accept `.csv`, `.json`, `.ndjson`, `.sql` dumps, native `.sqlite` files; dry-run preview before applying.
+- **SQL Manager (F2)** — create, open, import, inspect, export, vacuum, and delete SQLite databases with sql.js running in a Web Worker.
+- **NoSQL Manager (F3)** — declare collections with typed fields (string / number / boolean / date / json) and manage documents on Dexie/IndexedDB.
+- **Query (F4)** — write SQL against the active DB; results render as paginated ASCII tables; history is persisted.
+- **Import (F5)** — accept `.csv`, `.json`, `.ndjson`, `.sql` dumps, native `.sqlite` files, and preview before applying; appends only when the destination schema is compatible.
 - **Export (F6)** — pick a DB and a format; CSV / JSON / NDJSON / SQL dump / `.bdp` archive.
 - **Reports (F7)** — per-column `count / missing / distinct / min / max / mean / median / stddev / p25 / p75 / p95` plus ASCII or SVG histograms.
 - **Key Gen (F8)** — UUID v1 / v4 / v7 (time-ordered), ULID, hex tokens, AES keys (offloaded to a worker).
-- **Search (F10)** — full-text across every loaded DB. Build an inverted index lazily, then rank.
+- **Search (F10)** — full-text across every loaded DB. Build an inverted index lazily, then rank and label sources.
 - **Backup / Schema Diff** — `.bdp` archive round-trips (sql blobs + JSONL); visualizer + diff for two SQL DBs.
 - **Themes** — Mono Inverse / Amber / Green / Lilac; Compact / Standard / Focus layouts.
 - **Command Palette** — Ctrl/Cmd+K, fuzzy jump + action registry.

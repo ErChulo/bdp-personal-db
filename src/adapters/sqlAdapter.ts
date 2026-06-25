@@ -2,6 +2,8 @@
 import type { SqlExecResult, SqlTableInfo } from '../utils/schema';
 import { sha256Hex } from '../utils/digest';
 import { sqlStore } from './sqlStore';
+import { isSealedBytes, sealBytes, unsealBytes } from '../security/vault';
+import SqlWorker from './sql.worker.ts?worker&inline';
 
 let _worker: Worker | null = null;
 const pending = new Map<string, { resolve: (v: any) => void; reject: (e: Error) => void }>();
@@ -9,7 +11,7 @@ const loaded = new Set<string>();
 const loading = new Map<string, Promise<void>>();
 
 function spawn(): Worker {
-  const w = new Worker(new URL('./sql.worker.ts', import.meta.url), { type: 'module' });
+  const w = new SqlWorker();
   w.onmessage = (e) => {
     const { id, ok, error, ...rest } = e.data || {};
     const slot = pending.get(id);
@@ -52,8 +54,12 @@ async function ensureLoaded(dbId: string): Promise<void> {
   const task = (async () => {
     const record = await sqlStore.read(dbId);
     if (!record) throw new Error(`Database ${dbId} is missing or corrupt in local storage`);
-    await call({ type: 'import', dbId, bytes: record.bytes });
+    const decoded = await unsealBytes(record.bytes);
+    await call({ type: 'import', dbId, bytes: decoded.bytes });
     loaded.add(dbId);
+    if (!decoded.encrypted && !isSealedBytes(record.bytes)) {
+      await persist(dbId, { ...record, bytes: decoded.bytes });
+    }
   })().finally(() => loading.delete(dbId));
 
   loading.set(dbId, task);
@@ -72,12 +78,13 @@ async function persist(dbId: string, previousRecord?: Awaited<ReturnType<typeof 
   if (!before) throw new Error(`Database ${dbId} is missing or corrupt in local storage`);
 
   const bytes = await exportBytes(dbId);
+  const sealed = await sealBytes(bytes);
   const next = {
     ...before,
-    bytes,
+    bytes: sealed,
     updatedAt: Date.now(),
     revision: before.revision + 1,
-    checksum: await sha256Hex(bytes),
+    checksum: await sha256Hex(sealed),
   };
 
   try {

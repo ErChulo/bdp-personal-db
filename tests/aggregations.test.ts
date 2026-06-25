@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeColumnStats, numericStats } from '../src/reports/aggregations';
+import { computeColumnStats, describeSourceResult, formatCountLabel, formatSourceLabel, numericStats } from '../src/reports/aggregations';
 
 describe('aggregations', () => {
   it('numericStats computes min/max/median/percentiles', () => {
@@ -39,5 +39,22 @@ describe('aggregations', () => {
     expect(s.type).toBe('string');
     expect(s.distinct).toBe(2);
     expect(s.topValues?.[0]).toEqual({ value: 'alice', count: 2 });
+  });
+
+  it('computes stats for 10,000 rows within one second', () => {
+    const rows: unknown[][] = Array.from({ length: 10_000 }, (_, i) => [`row-${i + 1}`, i + 1, i % 2 === 0 ? 'even' : 'odd']);
+    const started = performance.now();
+    const stats = computeColumnStats('score', 1, rows);
+    const elapsed = performance.now() - started;
+    expect(elapsed).toBeLessThan(1000);
+    expect(stats.count).toBe(10_000);
+    expect(stats.numeric?.max).toBe(10_000);
+  });
+
+  it('formats deterministic source and count labels', () => {
+    expect(formatSourceLabel({ kind: 'sql', name: 'metrics' })).toBe('SQL · metrics');
+    expect(formatCountLabel(1, 'row')).toBe('1 row');
+    expect(formatCountLabel(2, 'row')).toBe('2 rows');
+    expect(describeSourceResult({ kind: 'nosql', name: 'inventory' }, 3, 'document')).toBe('3 documents from NoSQL · inventory');
   });
 });

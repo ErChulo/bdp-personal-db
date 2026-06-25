@@ -23,6 +23,15 @@ npm run serve
 
 Open `http://127.0.0.1:4173/`.
 
+## Recommended workflow
+
+1. Start on Dashboard and create or select a SQL database or NoSQL collection.
+2. Use Query, Reports, Search, and Schema Diff to inspect local data.
+3. Use Import and Export for bounded file-based data movement.
+4. Use Backup / Snapshot for a full portable archive.
+5. Keep an eye on the status bar: writable vs read-only tab ownership, offline readiness, and update prompts are all visible there.
+6. If the app shows a newer build is ready, finish the current operation, then accept the reload prompt.
+
 ## Core durability drill
 
 1. Create SQL database `drills` and table `scores(id INTEGER PRIMARY KEY, name TEXT, score INTEGER)`.

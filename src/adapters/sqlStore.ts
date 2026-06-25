@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { sha256Hex } from '../utils/digest';
+import { isSealedBytes, isVaultUnlocked, sealBytes } from '../security/vault';
 
 const DB_NAME = 'bdp-sql';
 const DB_VERSION = 1;
@@ -44,6 +45,11 @@ async function idbSet(key: string, value: any): Promise<void> {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
+}
+
+async function sealForStorage(record: SqlDbRecord): Promise<SqlDbRecord> {
+  if (!isVaultUnlocked() || isSealedBytes(record.bytes)) return record;
+  return { ...record, bytes: await sealBytes(record.bytes) };
 }
 
 async function normalizeRecord(record: SqlDbRecord | undefined, fallbackName = 'unknown'): Promise<SqlDbRecord | undefined> {
@@ -112,10 +118,13 @@ export const sqlStore = {
   async write(id: string, record: SqlDbRecord): Promise<void> {
     const normalized = await normalizeRecord(record, record.name);
     if (!normalized) throw new Error(`Cannot persist empty SQL record for ${id}`);
-    return idbSet(id, normalized);
+    return idbSet(id, await sealForStorage(normalized));
   },
   async commit(id: string, updater: (current: SqlDbRecord | undefined) => Promise<SqlDbRecord | undefined>): Promise<void> {
-    await idbCommit(id, updater);
+    await idbCommit(id, async (current) => {
+      const next = await updater(current);
+      return next ? sealForStorage(next) : next;
+    });
   },
   async listAll(): Promise<{ id: string; name: string; createdAt: number; updatedAt: number }[]> {
     const keys = await idbGetAllKeys();

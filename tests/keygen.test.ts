@@ -40,4 +40,9 @@ describe('keygen', () => {
     expect(randomHexToken(256).length).toBe(64);
     expect(randomHexToken(512).length).toBe(128);
   });
+
+  it('can generate a large batch of unique UUID v4 values', () => {
+    const ids = Array.from({ length: 1000 }, () => uuidv4());
+    expect(new Set(ids).size).toBe(ids.length);
+  });
 });

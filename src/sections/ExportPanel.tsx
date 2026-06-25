@@ -5,7 +5,7 @@ import { nosqlAdapter } from '../adapters/nosqlAdapter';
 import { serializeCsv } from '../importExport/csv';
 import { collectionToJson, collectionToNdjson } from '../importExport/json';
 import { emitSqlDump, type ParsedDumpTable } from '../importExport/sqlDump';
-import { buildArchive } from '../importExport/bdpArchive';
+import { buildArchive, formatBytes, summarizeTransfer } from '../importExport/bdpArchive';
 import { strToU8, zipSync } from 'fflate';
 
 type Format = 'csv' | 'json' | 'ndjson' | 'sqldump' | 'bdp';
@@ -29,20 +29,34 @@ export function ExportPanel() {
     let operationError: string | undefined;
     beginOperation('export');
     try {
+      const sourceName = source === 'sql'
+        ? (sqlDbs.find((d) => d.id === sqlId)?.name ?? 'SQL source')
+        : (collections.find((c) => c.id === colId)?.name ?? 'NoSQL source');
+      const failedEntries: string[] = [];
+      let itemCount = 0;
+      let payloadBytes = 0;
       if (source === 'sql') {
         if (!sqlId) throw new Error('pick a SQL DB');
-        const dbName = sqlDbs.find((d) => d.id === sqlId)?.name || 'export';
+        const dbName = sourceName || 'export';
         const schema = await sqlAdapter.schema(sqlId);
         const tableRows: ParsedDumpTable[] = [];
         for (const t of schema.tables) {
           if (t.columns.length === 0) continue;
-          const r = await sqlAdapter.exec(sqlId, `SELECT * FROM "${t.name}"`);
-          const rowsAsStr: string[][] = r.rows.map((row) => row.map((v) => (v === null || v === undefined ? '' : String(v))));
-          tableRows.push({ name: t.name, columns: t.columns.map((c) => c.name), rows: rowsAsStr });
+          try {
+            const r = await sqlAdapter.exec(sqlId, `SELECT * FROM "${t.name}"`);
+            const rowsAsStr: string[][] = r.rows.map((row) => row.map((v) => (v === null || v === undefined ? '' : String(v))));
+            tableRows.push({ name: t.name, columns: t.columns.map((c) => c.name), rows: rowsAsStr });
+          } catch (err) {
+            failedEntries.push(`table "${t.name}": ${(err as Error).message}`);
+          }
+        }
+        itemCount = tableRows.length;
+        if (tableRows.length === 0 && failedEntries.length > 0) {
+          throw new Error(`no tables could be exported; failed: ${failedEntries.join('; ')}`);
         }
         if (format === 'csv') {
-          exportCsvMultiTable(dbName, tableRows);
-          setInfo('exported CSV zip');
+          payloadBytes = exportCsvMultiTable(dbName, tableRows);
+          setInfo(buildExportInfo([{ name: dbName, itemCount, byteLength: payloadBytes, failedEntries }], format));
         } else if (format === 'json' || format === 'ndjson') {
           const obj: Record<string, unknown[]> = {};
           for (const t of tableRows) {
@@ -51,33 +65,44 @@ export function ExportPanel() {
           const out = format === 'json'
             ? JSON.stringify(obj, null, 2)
             : tableRows.map((t) => t.rows.map((r) => JSON.stringify(Object.fromEntries(t.columns.map((c, i) => [c, r[i]])))).join('\n')).join('\n');
-          triggerDownload(new Blob([out], { type: 'application/json' }), `${dbName}.${format === 'json' ? 'json' : 'ndjson'}`);
-          setInfo(`exported ${format}`);
+          const blob = new Blob([out], { type: 'application/json' });
+          payloadBytes = blob.size;
+          triggerDownload(blob, `${dbName}.${format === 'json' ? 'json' : 'ndjson'}`);
+          setInfo(buildExportInfo([{ name: dbName, itemCount, byteLength: payloadBytes, failedEntries }], format));
         } else if (format === 'sqldump') {
           const sql = emitSqlDump(tableRows);
-          triggerDownload(new Blob([sql], { type: 'application/sql' }), `${dbName}.sql`);
-          setInfo('exported SQL dump');
+          const blob = new Blob([sql], { type: 'application/sql' });
+          payloadBytes = blob.size;
+          triggerDownload(blob, `${dbName}.sql`);
+          setInfo(buildExportInfo([{ name: dbName, itemCount, byteLength: payloadBytes, failedEntries }], format));
         } else if (format === 'bdp') {
           const rawBytes = await sqlAdapter.export(sqlId);
           const zip = await buildArchive({ items: [{ kind: 'sql', id: sqlId, name: dbName, data: rawBytes }] });
-          triggerDownload(new Blob([zip as Uint8Array<ArrayBuffer>], { type: 'application/zip' }), `${dbName}.bdp`);
-          setInfo('exported .bdp');
+          const blob = new Blob([zip as Uint8Array<ArrayBuffer>], { type: 'application/zip' });
+          payloadBytes = blob.size;
+          triggerDownload(blob, `${dbName}.bdp`);
+          setInfo(buildExportInfo([{ name: dbName, itemCount: 1, byteLength: payloadBytes, failedEntries }], format));
         }
       } else {
         if (!colId) throw new Error('pick a NoSQL collection');
         const meta = await nosqlAdapter.getCollectionMeta(colId);
         if (!meta) throw new Error('collection meta missing');
         const docs = await nosqlAdapter.listDocs(colId, { limit: 1_000_000 });
+        itemCount = docs.length;
         if (format === 'csv') {
           const columns = ['id', ...meta.fields.map((f) => f.name)];
           const csvRows = docs.map((d) => Object.fromEntries(columns.map((c) => [c, String(d[c] ?? '')])));
           const out = serializeCsv(columns, csvRows);
-          triggerDownload(new Blob([out], { type: 'text/csv' }), `${meta.name}.csv`);
-          setInfo('exported CSV');
+          const blob = new Blob([out], { type: 'text/csv' });
+          payloadBytes = blob.size;
+          triggerDownload(blob, `${meta.name}.csv`);
+          setInfo(buildExportInfo([{ name: meta.name, itemCount, byteLength: payloadBytes, failedEntries }], format));
         } else if (format === 'json' || format === 'ndjson') {
           const out = format === 'json' ? collectionToJson(docs, meta.name) : collectionToNdjson(docs);
-          triggerDownload(new Blob([out], { type: 'application/json' }), `${meta.name}.${format === 'json' ? 'json' : 'ndjson'}`);
-          setInfo(`exported ${format}`);
+          const blob = new Blob([out], { type: 'application/json' });
+          payloadBytes = blob.size;
+          triggerDownload(blob, `${meta.name}.${format === 'json' ? 'json' : 'ndjson'}`);
+          setInfo(buildExportInfo([{ name: meta.name, itemCount, byteLength: payloadBytes, failedEntries }], format));
         } else if (format === 'sqldump') {
           const cols = ['id', ...meta.fields.map((f) => f.name)];
           const rows: string[][] = docs.map((d) => ['"' + String(d.id).replace(/"/g, '""') + '"', ...meta.fields.map((f) => {
@@ -87,19 +112,26 @@ export function ExportPanel() {
           })]);
           const dump: ParsedDumpTable[] = [{ name: meta.name, columns: cols, rows }];
           const sql = emitSqlDump(dump);
-          triggerDownload(new Blob([sql], { type: 'application/sql' }), `${meta.name}.sql`);
-          setInfo('exported SQL dump');
+          const blob = new Blob([sql], { type: 'application/sql' });
+          payloadBytes = blob.size;
+          triggerDownload(blob, `${meta.name}.sql`);
+          setInfo(buildExportInfo([{ name: meta.name, itemCount, byteLength: payloadBytes, failedEntries }], format));
         } else if (format === 'bdp') {
           const jsonl = docs.map((d) => JSON.stringify(d)).join('\n');
           const zip = await buildArchive({
             items: [{ kind: 'nosql', id: colId, name: meta.name, fields: meta.fields.map((f) => f.name), data: strToU8(jsonl) }],
           });
-          triggerDownload(new Blob([zip as Uint8Array<ArrayBuffer>], { type: 'application/zip' }), `${meta.name}.bdp`);
-          setInfo('exported .bdp');
+          const blob = new Blob([zip as Uint8Array<ArrayBuffer>], { type: 'application/zip' });
+          payloadBytes = blob.size;
+          triggerDownload(blob, `${meta.name}.bdp`);
+          setInfo(buildExportInfo([{ name: meta.name, itemCount: 1, byteLength: payloadBytes, failedEntries }], format));
         }
       }
-      const label = `${source === 'sql' ? sqlDbs.find((d) => d.id === sqlId)?.name : collections.find((c) => c.id === colId)?.name} → ${format}`;
+      const label = `${sourceName} → ${format}`;
       pushRecent(`exported ${label}`);
+      if (failedEntries.length > 0) {
+        setError(`partial export: ${failedEntries.join('; ')}`);
+      }
     } catch (err) {
       operationError = (err as Error).message;
       setError(operationError);
@@ -175,7 +207,28 @@ function labelOf(f: Format): string {
   return '↓ .bdp archive';
 }
 
-function exportCsvMultiTable(dbName: string, tables: ParsedDumpTable[]) {
+function buildExportInfo(items: { name: string; itemCount: number; byteLength: number; failedEntries: string[] }[], format: Format): string {
+  const summary = summarizeTransfer(items);
+  const prefix = summary.failedEntries.length > 0 ? 'partial export' : 'exported';
+  const formatLabel = formatLabelFor(format);
+  const details = summary.sources
+    .map((item) => `${item.name} [${item.itemCount} ${itemCountLabel(item.itemCount)} · ${formatBytes(item.byteLength)}]`)
+    .join(', ');
+  const failures = summary.failedEntries.length ? `; failed: ${summary.failedEntries.join('; ')}` : '';
+  return `${prefix} ${details} as ${formatLabel}${failures}`;
+}
+
+function formatLabelFor(format: Format): string {
+  if (format === 'bdp') return '.bdp';
+  if (format === 'sqldump') return 'SQL';
+  return format.toUpperCase();
+}
+
+function itemCountLabel(itemCount: number): string {
+  return itemCount === 1 ? 'item' : 'items';
+}
+
+function exportCsvMultiTable(dbName: string, tables: ParsedDumpTable[]): number {
   const files: Record<string, Uint8Array> = {};
   for (const t of tables) {
     const cols = t.columns;
@@ -186,7 +239,9 @@ function exportCsvMultiTable(dbName: string, tables: ParsedDumpTable[]) {
     files[`${t.name}.csv`] = strToU8(text);
   }
   const zip = zipSync(files, { level: 6 });
-  triggerDownload(new Blob([zip as Uint8Array<ArrayBuffer>], { type: 'application/zip' }), `${dbName}.csv.zip`);
+  const blob = new Blob([zip as Uint8Array<ArrayBuffer>], { type: 'application/zip' });
+  triggerDownload(blob, `${dbName}.csv.zip`);
+  return blob.size;
 }
 
 function triggerDownload(blob: Blob, filename: string) {

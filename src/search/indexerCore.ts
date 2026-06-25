@@ -5,11 +5,13 @@ export interface IndexEntry {
   postings: Map<string, Map<string, number[]>>;
   /** term -> doc freq */
   docFreq: Map<string, number>;
+  /** doc-id -> source metadata */
+  sources: Map<string, IndexedSource>;
   totalDocs: number;
 }
 
 export function createIndex(): IndexEntry {
-  return { postings: new Map(), docFreq: new Map(), totalDocs: 0 };
+  return { postings: new Map(), docFreq: new Map(), sources: new Map(), totalDocs: 0 };
 }
 
 const STOPWORDS = new Set([
@@ -27,7 +29,18 @@ export function tokenize(s: string): string[] {
   return out;
 }
 
-export function indexDoc(idx: IndexEntry, docId: string, text: string) {
+export interface IndexedSource {
+  kind: 'sql' | 'nosql';
+  dbId: string;
+  tableOrCollection: string;
+}
+
+export function formatIndexedSourceLabel(source: Pick<IndexedSource, 'kind' | 'tableOrCollection'>): string {
+  return `${source.kind === 'sql' ? 'SQL' : 'NoSQL'} · ${source.tableOrCollection}`;
+}
+
+export function indexDoc(idx: IndexEntry, doc: IndexedDoc) {
+  const { id: docId, text, source } = doc;
   const terms = tokenize(text);
   if (!terms.length) return;
   const map = new Map<string, number[]>();
@@ -37,6 +50,7 @@ export function indexDoc(idx: IndexEntry, docId: string, text: string) {
     map.set(terms[i], pos);
   }
   idx.postings.set(docId, map);
+  idx.sources.set(docId, source);
   idx.totalDocs++;
   for (const t of map.keys()) idx.docFreq.set(t, (idx.docFreq.get(t) ?? 0) + 1);
 }
@@ -44,6 +58,8 @@ export function indexDoc(idx: IndexEntry, docId: string, text: string) {
 export interface ScoredHit {
   docId: string;
   score: number;
+  source: IndexedSource;
+  sourceLabel: string;
 }
 
 export function queryIdx(idx: IndexEntry, q: string): ScoredHit[] {
@@ -61,7 +77,12 @@ export function queryIdx(idx: IndexEntry, q: string): ScoredHit[] {
     }
   }
   return [...scoreByDoc.entries()]
-    .map(([docId, score]) => ({ docId, score }))
+    .map(([docId, score]) => {
+      const source = idx.sources.get(docId);
+      if (!source) return null;
+      return { docId, score, source, sourceLabel: formatIndexedSourceLabel(source) };
+    })
+    .filter((hit): hit is ScoredHit => hit !== null)
     .sort((a, b) => b.score - a.score);
 }
 
@@ -80,6 +101,7 @@ export function serializeIdx(idx: IndexEntry): string {
   return JSON.stringify({
     postings,
     docFreq: Object.fromEntries(idx.docFreq),
+    sources: Object.fromEntries([...idx.sources.entries()].map(([docId, source]) => [docId, source])),
     totalDocs: idx.totalDocs,
   });
 }
@@ -88,11 +110,13 @@ export function deserializeIdx(json: string): IndexEntry {
   const data = JSON.parse(json) as {
     postings: Record<string, Record<string, number[]>>;
     docFreq: Record<string, number>;
+    sources: Record<string, IndexedSource>;
     totalDocs: number;
   };
   const idx = createIndex();
   idx.totalDocs = data.totalDocs;
   idx.docFreq = new Map(Object.entries(data.docFreq));
+  idx.sources = new Map(Object.entries(data.sources));
   for (const [docId, m] of Object.entries(data.postings)) {
     const inner = new Map<string, number[]>();
     for (const [k, v] of Object.entries(m)) inner.set(k, v);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildArchive, readArchive } from '../src/importExport/bdpArchive';
+import { buildArchive, readArchive, formatBytes, formatTransferSummary, summarizeTransfer } from '../src/importExport/bdpArchive';
 import { strFromU8, strToU8, zipSync } from 'fflate';
 
 describe('bdpArchive', () => {
@@ -30,5 +30,18 @@ describe('bdpArchive', () => {
     }));
     const bad = zipSync({ 'manifest.json': manifest });
     await expect(readArchive(new Uint8Array(bad))).rejects.toThrow(/unsupported bdp archive format version/);
+  });
+
+  it('summarizes transfer batches with source names and failures', () => {
+    const summary = summarizeTransfer([
+      { name: 'orders', itemCount: 3, byteLength: 1024, failedEntries: [] },
+      { name: 'contacts', itemCount: 1, byteLength: 1536, failedEntries: ['table "audit": permission denied'] },
+    ]);
+    expect(summary.sourceCount).toBe(2);
+    expect(summary.totalItems).toBe(4);
+    expect(summary.totalBytes).toBe(2560);
+    expect(formatBytes(1536)).toBe('1.5 KB');
+    expect(formatTransferSummary('backup', summary)).toContain('orders');
+    expect(formatTransferSummary('backup', summary)).toContain('failed: contacts: table "audit": permission denied');
   });
 });

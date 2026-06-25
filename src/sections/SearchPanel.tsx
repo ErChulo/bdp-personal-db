@@ -4,6 +4,8 @@ import { sqlAdapter } from '../adapters/sqlAdapter';
 import { nosqlAdapter } from '../adapters/nosqlAdapter';
 import { searchClient } from '../search/searchClient';
 import type { IndexedDoc } from '../search/indexerCore';
+import { formatCountLabel } from '../reports/aggregations';
+import { SectionStateBanner } from './SectionState';
 
 interface IndexedMetaEntry { id: string; kind: 'sql' | 'nosql'; table: string; }
 
@@ -17,10 +19,12 @@ interface Hit {
 export function SearchPanel() {
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<Hit[]>([]);
+  const [totalHits, setTotalHits] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [indexedAt, setIndexedAt] = useState<number | null>(null);
   const [docMap, setDocMap] = useState<Map<string, IndexedMetaEntry>>(new Map());
+  const [lastSearch, setLastSearch] = useState('');
   const serializedRef = useRef<string>('');
   const sqlDbs = useAppStore((s) => s.sqlDbs);
   const collections = useAppStore((s) => s.nosqlCollections);
@@ -61,7 +65,9 @@ export function SearchPanel() {
       serializedRef.current = built.serialized;
       setDocMap(metaMap);
       setIndexedAt(Date.now());
-      setInfo('index built');
+      setHits([]);
+      setTotalHits(0);
+      setLastSearch('');
     } catch (err) {
       operationError = (err as Error).message;
       setError(operationError);
@@ -72,7 +78,15 @@ export function SearchPanel() {
   }
 
   async function runSearch() {
-    if (!query.trim()) { setHits([]); return; }
+    const term = query.trim();
+    if (!term) {
+      setHits([]);
+      setTotalHits(0);
+      setLastSearch('');
+      setError(null);
+      return;
+    }
+    setLastSearch(term);
     setBusy(true); setError(null);
     let operationError: string | undefined;
     beginOperation('query');
@@ -80,16 +94,21 @@ export function SearchPanel() {
       if (!serializedRef.current) {
         await rebuildIndex();
       }
-      const { hits: raw } = await searchClient.search(query, serializedRef.current);
+      const { hits: raw, totalHits: rawTotalHits } = await searchClient.search(query, serializedRef.current);
       const decorated: Hit[] = raw
         .map((h) => {
           const meta = docMap.get(h.docId);
           if (!meta) return null;
-          const source = meta.kind === 'sql' ? h.docId.split('/')[1] : meta.table;
-          return { docId: h.docId, score: h.score, meta, snippet: meta.kind === 'sql' ? `…${source}…` : `…${source}/${h.docId.split('/')[1]}…` };
+          return {
+            docId: h.docId,
+            score: h.score,
+            meta,
+            snippet: `…${h.sourceLabel}…`,
+          };
         })
         .filter((x): x is Hit => x !== null);
       setHits(decorated);
+      setTotalHits(rawTotalHits);
     } catch (err) {
       operationError = (err as Error).message;
       setError(operationError);
@@ -100,6 +119,23 @@ export function SearchPanel() {
   }
 
   const lastIndexedLabel = useMemo(() => indexedAt ? new Date(indexedAt).toLocaleTimeString() : 'never', [indexedAt]);
+  const stateTone: 'loading' | 'empty' | 'success' | 'error' | 'info' =
+    error ? 'error' :
+    busy ? 'loading' :
+    totalHits > 0 ? 'success' :
+    lastSearch ? 'empty' :
+    indexedAt ? 'info' : 'empty';
+  const stateMessage = error
+    ? error
+    : busy
+      ? (lastSearch ? `Searching for “${lastSearch}”…` : 'Building search index…')
+      : totalHits > 0
+        ? `${formatCountLabel(totalHits, 'hit')} for “${lastSearch || query.trim()}”.`
+        : lastSearch
+          ? `No hits for “${lastSearch}”.`
+          : indexedAt
+            ? `Index ready with ${docMap.size} docs. Search to find matches.`
+            : 'Build the index to scan the first 10,000 rows/documents per source.';
 
   return (
     <div className="section-body">
@@ -107,10 +143,10 @@ export function SearchPanel() {
         <h1>Search</h1>
         <span className="fkey">F10</span>
         <span style={{ flex: 1 }} />
-        <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>index: {lastIndexedLabel} · {docMap.size} indexed docs</span>
+        <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>index: {lastIndexedLabel} · {docMap.size} indexed docs · first 10,000 rows/documents per source</span>
       </div>
       <div className="section-content">
-        {error && <div className="banner danger">{error}</div>}
+        <SectionStateBanner tone={stateTone}>{stateMessage}</SectionStateBanner>
         <div className="btn-row" style={{ marginBottom: 10 }}>
           <input
             id="search-query"
@@ -127,7 +163,9 @@ export function SearchPanel() {
           <button onClick={rebuildIndex} disabled={busy}>{busy ? '…' : '∿ Rebuild index'}</button>
         </div>
         {hits.length === 0 ? (
-          <div style={{ color: 'var(--fg-muted)', fontSize: 12 }}>no results yet</div>
+          <div style={{ color: 'var(--fg-muted)', fontSize: 12 }}>
+            {indexedAt ? 'No hits are currently loaded.' : 'No results yet — build the index first.'}
+          </div>
         ) : (
           <table className="ascii">
             <thead>
@@ -161,6 +199,3 @@ function serialize(v: unknown): string {
   if (v instanceof Date) return v.toISOString();
   try { return JSON.stringify(v); } catch { return String(v); }
 }
-
-function setInfo(_: string) { /* unused hook for future */ }
-void setInfo;

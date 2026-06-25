@@ -21,7 +21,7 @@ self.onmessage = (e: MessageEvent<Req>) => {
   try {
     if (type === 'build') {
       const idx = createIndex();
-      for (const d of e.data.docs) indexDoc(idx, d.id, d.text);
+      for (const d of e.data.docs) indexDoc(idx, d);
       lastSerialized = serializeIdx(idx);
       (self as any).postMessage({ id, ok: true, serialized: lastSerialized });
       return;
@@ -29,7 +29,7 @@ self.onmessage = (e: MessageEvent<Req>) => {
     if (type === 'search') {
       const idx = e.data.serialized ? deserializeIdx(e.data.serialized) : deserializeIdx(lastSerialized);
       const hits: ScoredHit[] = queryIdx(idx, e.data.q);
-      (self as any).postMessage({ id, ok: true, hits });
+      (self as any).postMessage({ id, ok: true, hits, totalHits: hits.length });
       return;
     }
   } catch (err) {

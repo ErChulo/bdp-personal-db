@@ -1,12 +1,12 @@
 /* BDP theme system — medium retro base + four themes */
 :root,
 :root[data-theme='mono'] {
-  --bg: #0f1118;
-  --bg-elev: #151823;
-  --bg-elev-2: #1b1f2c;
-  --border: #2a3145;
+  --bg: #000;
+  --bg-elev: #000;
+  --bg-elev-2: #050505;
+  --border: #1f1f1f;
   --fg: #e6e9f2;
-  --fg-muted: #8a92a8;
+  --fg-muted: #9ca3b8;
   --accent: #5cf2d6;
   --accent-2: #f7b955;
   --accent-3: #7cd87c;

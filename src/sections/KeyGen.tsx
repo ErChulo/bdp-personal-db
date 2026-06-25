@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { uuidv4, uuidv7, uuidv1 } from '../keygen/uuid';
 import { ulid } from '../keygen/ulid';
 import { randomHexToken } from '../keygen/aes';
+import { SectionStateBanner } from './SectionState';
 
 type Kind = 'uuid-v4' | 'uuid-v7' | 'uuid-v1' | 'ulid' | 'hex' | 'aes';
 
@@ -13,28 +14,44 @@ export function KeyGen() {
   const [aesFormat, setAesFormat] = useState<'hex' | 'base64'>('hex');
   const [items, setItems] = useState<string[]>([]);
   const [info, setInfo] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   async function generate() {
-    const out: string[] = [];
-    if (kind === 'uuid-v4') for (let i = 0; i < count; i++) out.push(uuidv4());
-    if (kind === 'uuid-v7') for (let i = 0; i < count; i++) out.push(uuidv7());
-    if (kind === 'uuid-v1') for (let i = 0; i < count; i++) out.push(uuidv1());
-    if (kind === 'ulid') for (let i = 0; i < count; i++) out.push(ulid());
-    if (kind === 'hex') for (let i = 0; i < count; i++) out.push(randomHexToken(hexBits));
-    if (kind === 'aes') {
-      // offload to worker so the key never sits in main thread memory long
-      const results = await Promise.all(
-        Array.from({ length: count }, () => generateAesInWorker(aesBits, aesFormat)),
-      );
-      for (const r of results) out.push(r);
+    setBusy(true);
+    setError(null);
+    try {
+      const out: string[] = [];
+      if (kind === 'uuid-v4') for (let i = 0; i < count; i++) out.push(uuidv4());
+      if (kind === 'uuid-v7') for (let i = 0; i < count; i++) out.push(uuidv7());
+      if (kind === 'uuid-v1') for (let i = 0; i < count; i++) out.push(uuidv1());
+      if (kind === 'ulid') for (let i = 0; i < count; i++) out.push(ulid());
+      if (kind === 'hex') for (let i = 0; i < count; i++) out.push(randomHexToken(hexBits));
+      if (kind === 'aes') {
+        // offload to worker so the key never sits in main thread memory long
+        const results = await Promise.all(
+          Array.from({ length: count }, () => generateAesInWorker(aesBits, aesFormat)),
+        );
+        for (const r of results) out.push(r);
+      }
+      setItems(out);
+      setInfo(`generated ${out.length} ${kind} value${out.length === 1 ? '' : 's'}`);
+    } catch (err) {
+      setError((err as Error).message);
     }
-    setItems(out);
-    setInfo(`generated ${out.length} ${kind} value${out.length === 1 ? '' : 's'}`);
+    finally {
+      setBusy(false);
+    }
   }
 
-  function copyAll() {
-    navigator.clipboard.writeText(items.join('\n'));
-    setInfo('copied all to clipboard');
+  async function copyAll() {
+    try {
+      await navigator.clipboard.writeText(items.join('\n'));
+      setError(null);
+      setInfo('copied all to clipboard');
+    } catch (err) {
+      setError((err as Error).message);
+    }
   }
 
   function downloadTxt() {
@@ -45,6 +62,21 @@ export function KeyGen() {
   }
 
   useEffect(() => { setItems([]); setInfo(null); }, [kind]);
+  useEffect(() => { setError(null); }, [kind]);
+  const stateTone: 'loading' | 'empty' | 'success' | 'error' | 'info' =
+    error ? 'error' :
+    busy ? 'loading' :
+    info ? 'success' :
+    items.length ? 'success' : 'empty';
+  const stateMessage = error
+    ? error
+    : busy
+      ? 'Generating values…'
+      : info
+        ? info
+        : items.length
+          ? `${items.length} value${items.length === 1 ? '' : 's'} ready.`
+          : 'Pick options and click generate.';
 
   return (
     <div className="section-body">
@@ -52,10 +84,10 @@ export function KeyGen() {
         <h1>Key Gen</h1>
         <span className="fkey">F8</span>
         <span style={{ flex: 1 }} />
-        <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Nothing is persisted — purely transient.</span>
+        <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Nothing is persisted — purely transient — 1000 values max per batch.</span>
       </div>
       <div className="section-content">
-        {info && <div className="banner ok">{info}</div>}
+        <SectionStateBanner tone={stateTone}>{stateMessage}</SectionStateBanner>
         <div className="btn-row">
           {(['uuid-v1', 'uuid-v4', 'uuid-v7', 'ulid', 'hex', 'aes'] as Kind[]).map((k) => (
             <button key={k} className={kind === k ? 'btn-primary' : ''} onClick={() => setKind(k)}>{labelOf(k)}</button>
@@ -92,8 +124,8 @@ export function KeyGen() {
               </label>
             </>
           )}
-          <button className="btn-primary" onClick={generate}>generate</button>
-          <button disabled={!items.length} onClick={copyAll}>copy all</button>
+          <button className="btn-primary" disabled={busy} onClick={() => void generate()}>{busy ? 'generating…' : 'generate'}</button>
+          <button disabled={!items.length || busy} onClick={() => void copyAll()}>copy all</button>
           <button disabled={!items.length} onClick={downloadTxt}>download .txt</button>
         </div>
         <hr className="ascii" />
@@ -119,7 +151,7 @@ function labelOf(k: Kind): string {
 
 function generateAesInWorker(bits: 128 | 192 | 256, format: 'hex' | 'base64'): Promise<string> {
   return new Promise((resolve, reject) => {
-    const w = new Worker(new URL('../workers/crypto.worker.ts', import.meta.url), { type: 'module' });
+    const w = new CryptoWorker();
     const id = crypto.randomUUID();
     const handler = (e: MessageEvent) => {
       if (e.data?.id !== id) return;
@@ -132,3 +164,4 @@ function generateAesInWorker(bits: 128 | 192 | 256, format: 'hex' | 'base64'): P
     w.postMessage({ id, bits, format });
   });
 }
+import CryptoWorker from '../workers/crypto.worker.ts?worker&inline';

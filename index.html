@@ -8,18 +8,6 @@
   </head>
   <body>
     <div id="root"></div>
-    <script>
-      if (location.protocol === 'file:') {
-        document.getElementById('root').innerHTML = `
-          <main style="max-width:720px;margin:64px auto;padding:24px;font:16px/1.5 monospace;color:#d8deef;background:#0f1118;border:1px solid #343b52">
-            <h1 style="color:#5cf2d6">BDP needs a local HTTP origin</h1>
-            <p>Browsers block this app's modules, workers, and SQLite WASM when <code>index.html</code> is opened through <code>file://</code>.</p>
-            <p>From the project directory, run:</p>
-            <pre style="padding:12px;background:#171b27;color:#5cf2d6">npm run serve</pre>
-            <p>Then open <a style="color:#5cf2d6" href="http://127.0.0.1:4173">http://127.0.0.1:4173</a>. The server is local and does not require internet access.</p>
-          </main>`;
-      }
-    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

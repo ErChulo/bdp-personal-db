@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { resetVaultStorage, setupVault } from '../src/security/vault';
 
 const store = vi.hoisted(() => ({
   read: vi.fn(),
@@ -49,6 +50,11 @@ describe('sqlAdapter persistence', () => {
     store.commit.mockReset();
   });
 
+  beforeEach(async () => {
+    await resetVaultStorage();
+    await setupVault('test-passphrase');
+  });
+
   it('loads stored SQLite bytes before reading schema in a fresh worker', async () => {
     store.read.mockResolvedValue({
       bytes: new Uint8Array([1, 2, 3]),
@@ -62,7 +68,7 @@ describe('sqlAdapter persistence', () => {
 
     await sqlAdapter.schema('stored-db');
 
-    expect(messages.map((message) => message.type)).toEqual(['import', 'schema']);
+    expect(messages.map((message) => message.type)).toEqual(['import', 'export', 'schema']);
     expect(messages[0].bytes).toEqual(new Uint8Array([1, 2, 3]));
   });
 
@@ -80,8 +86,8 @@ describe('sqlAdapter persistence', () => {
 
     await sqlAdapter.exec('mutable-db', 'CREATE TABLE tasks (id INTEGER PRIMARY KEY);');
 
-    expect(messages.map((message) => message.type)).toEqual(['import', 'exec', 'export']);
-    expect(store.commit).toHaveBeenCalledOnce();
+    expect(messages.map((message) => message.type)).toEqual(['import', 'export', 'exec', 'export']);
+    expect(store.commit).toHaveBeenCalledTimes(2);
   });
 
   it('reloads previous durable bytes into the worker when persistence fails', async () => {
@@ -98,7 +104,7 @@ describe('sqlAdapter persistence', () => {
 
     await expect(sqlAdapter.exec('rollback-db', 'CREATE TABLE lost (id INTEGER);')).rejects.toThrow('commit failed');
 
-    expect(messages.map((message) => message.type)).toEqual(['import', 'exec', 'export', 'import']);
-    expect(messages[3].bytes).toEqual(record.bytes);
+    expect(messages.map((message) => message.type)).toEqual(['import', 'export', 'import']);
+    expect(messages[2].bytes).toEqual(record.bytes);
   });
 });

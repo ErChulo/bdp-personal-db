@@ -12,8 +12,8 @@
 
 **Purpose**: Tooling and scaffolding needed before feature work lands.
 
-- [ ] T001 Add the browser test runner, config, and package scripts in `package.json` and `playwright.config.ts`
-- [ ] T002 [P] Create shared browser test helpers and large-fixture utilities in `tests/helpers/browser.ts` and `tests/fixtures/large-files.ts`
+- [X] T001 Add the browser test runner, config, and package scripts in `package.json` and `playwright.config.ts`
+- [X] T002 [P] Create shared browser test helpers and large-fixture utilities in `tests/helpers/browser.ts` and `tests/fixtures/large-files.ts`
 - [X] T003 [P] Add the workspace module scaffold and shared runtime types in `src/workspace/types.ts`, `src/workspace/errors.ts`, and `src/workspace/operations.ts`
 
 ---
@@ -38,8 +38,8 @@
 
 **Independent Test**: Create a database, define a table, insert and modify rows, navigate away, reload, and verify the exact stored database bytes, schema, records, and active selection are preserved.
 
-- [ ] T009 [P] [US1] Add regression coverage for SQL rehydration, reload durability, empty-database fallback prevention, and a first-database create/table/query browser drill that completes within 90 seconds in `tests/sqlAdapterPersistence.test.ts` and `tests/browser/sql-durable.spec.ts`
-- [ ] T010 [US1] Add multi-tab write-ownership regression coverage in `tests/browser/multi-tab.spec.ts` and `tests/sqlAdapterPersistence.test.ts`
+- [X] T009 [P] [US1] Add regression coverage for SQL rehydration, reload durability, empty-database fallback prevention, and a first-database create/table/query browser drill that completes within 90 seconds in `tests/sqlAdapterPersistence.test.ts` and `tests/browser/sql-durable.spec.ts`
+- [X] T010 [US1] Add multi-tab write-ownership regression coverage in `tests/browser/multi-tab.spec.ts` and `tests/sqlAdapterPersistence.test.ts`
 - [X] T011 [US1] Replace any silent empty-database substitution with exact stored-byte loading and actionable missing/corrupt errors in `src/adapters/sqlAdapter.ts` and `src/adapters/sqlStore.ts`
 - [X] T012 [US1] Implement fenced SQL mutation commit, strict revision checking, and worker rollback on persistence failure in `src/adapters/sqlAdapter.ts`, `src/adapters/sql.worker.ts`, and `src/workspace/lease.ts`
 - [X] T013 [US1] Persist and restore the active SQL selection, schema view, and query entry state in `src/shell/store.ts`, `src/sections/SqlManager.tsx`, `src/sections/Query.tsx`, and `src/sections/Dashboard.tsx`
@@ -55,11 +55,11 @@
 
 **Independent Test**: Open each primary section with pointer controls and return to Dashboard from each section without reloading or using a shortcut.
 
-- [ ] T015 [P] [US2] Add navigation and responsive journey coverage in `tests/browser/navigation.spec.ts` and `tests/browser/responsive.spec.ts`
-- [ ] T016 [P] [US2] Rework the persistent navigation shell and active-section affordances in `src/shell/AppNavigation.tsx`, `src/shell/StatusBar.tsx`, and `src/styles/app.css`
-- [ ] T017 [US2] Add visible Dashboard return paths, section headers, and active-state markers to every primary workflow view in `src/sections/Dashboard.tsx`, `src/sections/SqlManager.tsx`, `src/sections/NosqlManager.tsx`, `src/sections/Query.tsx`, `src/sections/ImportPanel.tsx`, `src/sections/ExportPanel.tsx`, `src/sections/Reports.tsx`, `src/sections/KeyGen.tsx`, `src/sections/SearchPanel.tsx`, `src/sections/Backup.tsx`, and `src/sections/SchemaDiff.tsx`
-- [ ] T018 [US2] Add reduced-motion-aware loading treatment and a sleeker waiting spinner in `src/App.tsx`, `src/styles/theme.css`, and `src/styles/app.css`
-- [ ] T019 [US2] Fix the import and backup flows so users can return to prior sections without losing context in `src/sections/ImportPanel.tsx`, `src/sections/Backup.tsx`, and `src/sections/ExportPanel.tsx`
+- [X] T015 [P] [US2] Add navigation and responsive journey coverage in `tests/browser/navigation.spec.ts` and `tests/browser/responsive.spec.ts`
+- [X] T016 [P] [US2] Rework the persistent navigation shell and active-section affordances in `src/shell/AppNavigation.tsx`, `src/shell/StatusBar.tsx`, and `src/styles/app.css`
+- [X] T017 [US2] Add visible Dashboard return paths, section headers, and active-state markers to every primary workflow view in `src/sections/Dashboard.tsx`, `src/sections/SqlManager.tsx`, `src/sections/NosqlManager.tsx`, `src/sections/Query.tsx`, `src/sections/ImportPanel.tsx`, `src/sections/ExportPanel.tsx`, `src/sections/Reports.tsx`, `src/sections/KeyGen.tsx`, `src/sections/SearchPanel.tsx`, `src/sections/Backup.tsx`, and `src/sections/SchemaDiff.tsx`
+- [X] T018 [US2] Add reduced-motion-aware loading treatment and a sleeker waiting spinner in `src/App.tsx`, `src/styles/theme.css`, and `src/styles/app.css`
+- [X] T019 [US2] Fix the import and backup flows so users can return to prior sections without losing context in `src/sections/ImportPanel.tsx`, `src/sections/Backup.tsx`, and `src/sections/ExportPanel.tsx`
 
 **Checkpoint**: Every primary section is visibly reachable, and the shell remains navigable at desktop and narrow widths.
 
@@ -71,7 +71,8 @@
 
 **Independent Test**: Serve the production build, go offline, reload, and complete local create/query/export/backup actions without external requests or blank screens.
 
-- [ ] T020 [P] [US3] Add offline, service-worker, and local-file startup coverage in `tests/browser/offline.spec.ts` and `tests/browser/update.spec.ts`
+- [X] T020 [P] [US3] Add offline, service-worker, and local-file startup coverage in `tests/browser/offline.spec.ts` and `tests/browser/update.spec.ts`
+- [X] T020a [US3] Add an offline-ready indicator and verification action in `src/workspace/update.ts`, `src/shell/StatusBar.tsx`, and `src/App.tsx` so hosted GitHub Pages users know when the app is cached and safe to use offline.
 - [X] T021 [US3] Replace install-time `skipWaiting` with idle-gated update messaging in `vite.config.ts`, `src/App.tsx`, and `src/shell/StatusBar.tsx`
 - [X] T022 [US3] Add a client-side update coordinator for ready, prompt, confirm, and reload states in `src/workspace/update.ts` and `src/shell/store.ts`
 - [X] T023 [US3] Add the unsupported local-file explanation and offline startup copy in `index.html`, `src/App.tsx`, and `README.md`
@@ -93,7 +94,7 @@
 - [X] T028 [US4] Expand backup archive validation with manifest digests, relative-path checks, and full dataset coverage in `src/importExport/bdpArchive.ts` and `src/sections/Backup.tsx`
 - [X] T029 [US4] Implement collision-safe restore planning, rename allocation, and rollback journaling in `src/importExport/bdpArchive.ts`, `src/adapters/sqlStore.ts`, `src/adapters/nosqlAdapter.ts`, and `src/sections/Backup.tsx`
 - [X] T030 [US4] Require explicit confirmation before deleting SQL databases or document collections in `src/sections/SqlManager.tsx`, `src/sections/NosqlManager.tsx`, and `src/shell/store.ts`
-- [ ] T031 [US4] Thread source naming, export completeness, and partial-failure reporting through the export and backup UI in `src/sections/ExportPanel.tsx`, `src/sections/Backup.tsx`, and `src/importExport/bdpArchive.ts`
+- [X] T031 [US4] Thread source naming, export completeness, and partial-failure reporting through `src/sections/ExportPanel.tsx`, `src/sections/Backup.tsx`, and `src/importExport/bdpArchive.ts`; show source names, item counts, byte counts, and failed entries without claiming complete success.
 
 **Checkpoint**: Import and restore flows validate before commit, preserve unrelated data, and handle collisions with renamed copies.
 
@@ -105,10 +106,15 @@
 
 **Independent Test**: Populate representative SQL and document data, then complete one successful operation in Query, Reports, Search, Schema Diff, and Key Generation with visible loading, empty, success, and error states.
 
-- [ ] T032 [P] [US5] Add behavior coverage for query, reporting, search, schema comparison, key generation, and a 10,000-row report performance check that completes within one second in `tests/aggregations.test.ts`, `tests/searchIndexer.test.ts`, `tests/asciiTable.test.ts`, `tests/keygen.test.ts`, and `tests/browser/local-tools.spec.ts`
-- [ ] T033 [P] [US5] Implement document collection create/edit/delete durability and reload recovery in `src/adapters/nosqlAdapter.ts`, `src/sections/NosqlManager.tsx`, and `src/shell/store.ts`
-- [ ] T034 [US5] Add section-level loading, empty-state, success, and error state plumbing in `src/sections/Query.tsx`, `src/sections/Reports.tsx`, `src/sections/SearchPanel.tsx`, `src/sections/SchemaDiff.tsx`, `src/sections/KeyGen.tsx`, and `src/sections/NosqlManager.tsx`
-- [ ] T035 [US5] Thread deterministic source labels and result counts through reports and search in `src/reports/aggregations.ts`, `src/reports/histogram.ts`, `src/search/searchClient.ts`, and `src/search/indexerCore.ts`
+- [X] T032 [P] [US5] Add behavior coverage for query, reporting, search, schema comparison, key generation, and a 10,000-row report performance check that completes within one second in `tests/aggregations.test.ts`, `tests/searchIndexer.test.ts`, `tests/asciiTable.test.ts`, `tests/keygen.test.ts`, and `tests/browser/local-tools.spec.ts`
+- [X] T032a [US5] Add bounded SQL result pagination for large query/report datasets in `src/sections/Query.tsx` and `src/sections/Reports.tsx`
+- [X] T032b [US5] Add large fixture generation and browser performance checks for 10,000-row reports and oversized-file rejection in `tests/fixtures/large-files.ts` and `tests/browser/local-tools.spec.ts`
+- [X] T032c [US5] Add user-visible large-data limits and guidance in import, query, reports, and search views.
+- [X] T033a [P] [US5] Persist NoSQL collection metadata create/rename/delete across reload in `src/adapters/nosqlAdapter.ts`, `src/sections/NosqlManager.tsx`, and `src/shell/store.ts`
+- [X] T033b [P] [US5] Persist NoSQL document create/edit/delete across reload with visible success/error states in `src/adapters/nosqlAdapter.ts` and `src/sections/NosqlManager.tsx`
+- [X] T033c [US5] Add NoSQL export, backup, restore, and collision regression coverage in `tests/browser/local-tools.spec.ts` and `tests/browser/import-backup.spec.ts`
+- [X] T034 [US5] Add section-level loading, empty-state, success, and error state plumbing in `src/sections/Query.tsx`, `src/sections/Reports.tsx`, `src/sections/SearchPanel.tsx`, `src/sections/SchemaDiff.tsx`, `src/sections/KeyGen.tsx`, and `src/sections/NosqlManager.tsx`
+- [X] T035 [US5] Thread deterministic source labels and result counts through reports and search in `src/reports/aggregations.ts`, `src/reports/histogram.ts`, `src/search/searchClient.ts`, and `src/search/indexerCore.ts`
 - [X] T036 [US5] Improve query execution feedback, duplicate-submit blocking, and empty-dataset guidance in `src/sections/Query.tsx`, `src/shell/StatusBar.tsx`, and `src/shell/store.ts`
 
 **Checkpoint**: All local analysis tools provide deterministic results and honest empty/error states.
@@ -119,9 +125,9 @@
 
 **Purpose**: Final hardening, documentation sync, and release validation.
 
-- [ ] T037 [P] Re-run end-to-end browser coverage for reload, offline, multi-tab, import/restore, and responsive paths in `tests/browser/*.spec.ts`
-- [ ] T038 Sync quickstart and in-app guidance with the final workflow in `specs/001-reliable-offline-bdp/quickstart.md`, `README.md`, and `src/App.tsx`
-- [ ] T039 Run `npm run typecheck`, `npm test`, `npm run build`, and `npm run test:browser`, then fix any failures in `package.json`, `scripts/verify-dist.mjs`, and `tests/browser/`
+- [X] T037 [P] Re-run end-to-end browser coverage for reload, offline, multi-tab, import/restore, and responsive paths in `tests/browser/*.spec.ts`
+- [X] T038 Sync quickstart and in-app guidance with the final workflow in `specs/001-reliable-offline-bdp/quickstart.md`, `README.md`, and `src/App.tsx`
+- [X] T039 Run `npm run typecheck`, `npm test`, `npm run build`, and `npm run test:browser`, then fix any failures in `package.json`, `scripts/verify-dist.mjs`, and `tests/browser/`
 
 ---
 

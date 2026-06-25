@@ -13,8 +13,8 @@ createRoot(container).render(
   </StrictMode>,
 );
 
-// A service worker needs an HTTP(S) origin. `npm run serve` provides one for
-// local, disconnected use; file:// is intentionally unsupported by browsers.
+// Service workers need an HTTP(S) origin, but the production build also inlines
+// into a standalone file://-safe bundle for air-gapped use.
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   window.addEventListener('load', () => {
     const url = new URL('sw.js', document.baseURI);

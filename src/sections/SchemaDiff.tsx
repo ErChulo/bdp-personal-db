@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '../shell/store';
 import { sqlAdapter } from '../adapters/sqlAdapter';
 import type { SqlTableInfo } from '../utils/schema';
+import { SectionStateBanner } from './SectionState';
 
 interface Node { id: string; label: string; rows: number; }
 
@@ -15,27 +16,43 @@ export function SchemaDiff() {
   const [leftTables, setLeftTables] = useState<SqlTableInfo[]>([]);
   const [rightTables, setRightTables] = useState<SqlTableInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loadingLeft, setLoadingLeft] = useState(false);
+  const [loadingRight, setLoadingRight] = useState(false);
 
   useEffect(() => {
-    if (!leftId) { setLeftTables([]); return; }
+    if (!leftId) { setLeftTables([]); setLoadingLeft(false); return; }
+    setLoadingLeft(true);
+    setError(null);
+    let operationError: string | undefined;
     beginOperation('query');
     sqlAdapter.schema(leftId)
-      .then((s) => { setLeftTables(s.tables); endOperation('query'); })
+      .then((s) => { setLeftTables(s.tables); })
       .catch((e) => {
         const message = (e as Error).message;
         setError(message);
-        endOperation('query', message);
+        operationError = message;
+      })
+      .finally(() => {
+        setLoadingLeft(false);
+        endOperation('query', operationError);
       });
   }, [leftId, beginOperation, endOperation]);
   useEffect(() => {
-    if (!rightId) { setRightTables([]); return; }
+    if (!rightId) { setRightTables([]); setLoadingRight(false); return; }
+    setLoadingRight(true);
+    setError(null);
+    let operationError: string | undefined;
     beginOperation('query');
     sqlAdapter.schema(rightId)
-      .then((s) => { setRightTables(s.tables); endOperation('query'); })
+      .then((s) => { setRightTables(s.tables); })
       .catch((e) => {
         const message = (e as Error).message;
         setError(message);
-        endOperation('query', message);
+        operationError = message;
+      })
+      .finally(() => {
+        setLoadingRight(false);
+        endOperation('query', operationError);
       });
   }, [rightId, beginOperation, endOperation]);
 
@@ -43,15 +60,33 @@ export function SchemaDiff() {
   const rightNodes: Node[] = useMemo(() => rightTables.map((t) => ({ id: t.name, label: t.name, rows: t.rowCount })), [rightTables]);
 
   const diff = useMemo(() => computeDiff(leftTables, rightTables), [leftTables, rightTables]);
+  const stateTone: 'loading' | 'empty' | 'success' | 'error' | 'info' =
+    error ? 'error' :
+    loadingLeft || loadingRight ? 'loading' :
+    !leftId && !rightId ? 'empty' :
+    leftId && rightId && leftTables.length > 0 && rightTables.length > 0 && diff.length === 0 ? 'success' :
+    leftId && rightId ? 'info' : 'empty';
+  const stateMessage = error
+    ? error
+    : loadingLeft || loadingRight
+      ? 'Loading schema…'
+      : !leftId && !rightId
+        ? 'Pick two SQL databases to compare their schema.'
+        : leftId && rightId && leftTables.length > 0 && rightTables.length > 0 && diff.length === 0
+          ? 'Schemas match.'
+          : leftId && rightId
+            ? 'Schemas loaded. Review the diff below.'
+            : 'Pick the other database to complete the comparison.';
 
   return (
     <div className="section-body">
       <div className="section-header">
         <h1>Schema Visualizer / Diff</h1>
         <span style={{ flex: 1 }} />
+        <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>SQL structure compare only · NoSQL collections listed below</span>
       </div>
       <div className="section-content">
-        {error && <div className="banner danger">{error}</div>}
+        <SectionStateBanner tone={stateTone}>{stateMessage}</SectionStateBanner>
         <div className="btn-row" style={{ marginBottom: 10 }}>
           <label>left <select id="diff-left" name="leftId" value={leftId} onChange={(e) => setLeftId(e.target.value)} style={{ minWidth: 180 }}>
             <option value="">— pick a SQL DB —</option>
@@ -64,15 +99,15 @@ export function SchemaDiff() {
         </div>
         <hr className="ascii" />
         <h4 style={{ color: 'var(--accent)' }}>SCHEMA (left)</h4>
-        {leftNodes.length === 0 ? <div style={{ color: 'var(--fg-muted)' }}>(no schema loaded)</div> :
+        {loadingLeft ? <div style={{ color: 'var(--fg-muted)' }}>(loading schema…)</div> : leftNodes.length === 0 ? <div style={{ color: 'var(--fg-muted)' }}>(no schema loaded)</div> :
           <SvgGraph nodes={leftNodes} accentVar="--accent" />}
         <hr className="ascii" />
         <h4 style={{ color: 'var(--accent-2)' }}>SCHEMA (right)</h4>
-        {rightNodes.length === 0 ? <div style={{ color: 'var(--fg-muted)' }}>(no schema loaded)</div> :
+        {loadingRight ? <div style={{ color: 'var(--fg-muted)' }}>(loading schema…)</div> : rightNodes.length === 0 ? <div style={{ color: 'var(--fg-muted)' }}>(no schema loaded)</div> :
           <SvgGraph nodes={rightNodes} accentVar="--accent-2" />}
         <hr className="ascii" />
         <h4 style={{ color: 'var(--accent-3)' }}>DIFF (left → right)</h4>
-        {diff.length === 0 ? <div style={{ color: 'var(--fg-muted)' }}>(pick both sides to compare)</div> :
+        {diff.length === 0 ? <div style={{ color: 'var(--fg-muted)' }}>{leftId && rightId ? '(schemas match)' : '(pick both sides to compare)'}</div> :
           <table className="ascii">
             <thead><tr><th>status</th><th>table</th><th>notes</th></tr></thead>
             <tbody>

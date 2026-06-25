@@ -16,6 +16,14 @@ export type WorkspaceUpdateStatus =
   | 'reloading'
   | 'failed';
 
+export type OfflineReadinessStatus =
+  | 'unsupported'
+  | 'online-only'
+  | 'installing'
+  | 'ready'
+  | 'offline'
+  | 'failed';
+
 export type WorkspaceOperationKind = 'query' | 'mutation' | 'import' | 'export' | 'backup' | 'restore';
 
 export interface WorkspaceOwnershipState {
@@ -31,9 +39,16 @@ export interface WorkspaceUpdateState {
   message: string | null;
 }
 
+export interface OfflineReadinessState {
+  status: OfflineReadinessStatus;
+  controlled: boolean;
+  cached: boolean;
+  online: boolean;
+  message: string | null;
+}
+
 export interface WorkspaceOperationState {
   activeCount: number;
   activeKinds: Record<WorkspaceOperationKind, number>;
   lastError: string | null;
 }
-

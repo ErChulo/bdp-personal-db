@@ -17,6 +17,7 @@
 - Q: When a newer cached application build is ready, how should it activate? → A: Prompt for reload after all data operations are idle.
 - Q: What maximum individual import or restore file size must BDP support? → A: 500 MB.
 - Q: How should BDP handle the same workspace opened in multiple tabs? → A: One writable tab; other tabs are read-only with explicit takeover.
+- Q: How should office users run the app when they cannot install software or run a local server? → A: The supported no-install workflow is HTTPS static hosting, such as GitHub Pages. The user opens the hosted app once while online, the service worker precaches local runtime assets, and future use works offline from the same browser profile. The app must show when offline installation is ready.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -67,9 +68,9 @@ return to Dashboard from each section without reloading or using a shortcut.
 
 ### User Story 3 - Work Without Internet Access (Priority: P2)
 
-As a user, I can load the installed production application from a local HTTP
-address, disconnect from the internet, reload it, and continue working with
-local databases and tools.
+As a user, I can load the installed production application from a local or
+hosted HTTPS/HTTP address, disconnect from the internet, reload it, and continue
+working with local databases and tools.
 
 **Why this priority**: Offline operation and local data ownership distinguish
 BDP from hosted database services.
@@ -79,7 +80,7 @@ access, reload, then create, query, report on, export, and back up local data.
 
 **Acceptance Scenarios**:
 
-1. **Given** the production application completed one successful HTTP load, **When** internet access is unavailable and the page reloads, **Then** all runtime resources required by the application remain available.
+1. **Given** the production application completed one successful HTTP load and reports offline readiness, **When** internet access is unavailable and the page reloads, **Then** all runtime resources required by the application remain available.
 2. **Given** the application is offline, **When** the user performs database or utility operations, **Then** no operation waits for or attempts to contact an external service.
 3. **Given** the user opens the application directly as a local file, **When** browser security prevents execution, **Then** the page explains how to start the local application address instead of remaining blank.
 

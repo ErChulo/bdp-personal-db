@@ -25,6 +25,21 @@ export interface ArchiveExtract {
   files: Record<string, Uint8Array>;
 }
 
+export interface TransferItemSummary {
+  name: string;
+  itemCount: number;
+  byteLength: number;
+  failedEntries: string[];
+}
+
+export interface TransferSummary {
+  sourceCount: number;
+  totalItems: number;
+  totalBytes: number;
+  failedEntries: string[];
+  sources: TransferItemSummary[];
+}
+
 export async function buildArchive(input: {
   items: (Omit<ArchiveManifestEntry, 'byteLength' | 'path' | 'sha256'> & {
     data: Uint8Array;
@@ -98,6 +113,46 @@ export async function readArchive(bytes: Uint8Array): Promise<ArchiveExtract> {
   }
 
   return { manifest, files };
+}
+
+export function summarizeTransfer(items: TransferItemSummary[]): TransferSummary {
+  const normalized = items.filter((item) => item.name.trim().length > 0);
+  return {
+    sourceCount: normalized.length,
+    totalItems: normalized.reduce((sum, item) => sum + item.itemCount, 0),
+    totalBytes: normalized.reduce((sum, item) => sum + item.byteLength, 0),
+    failedEntries: normalized.flatMap((item) => item.failedEntries.map((entry) => `${item.name}: ${entry}`)),
+    sources: normalized,
+  };
+}
+
+export function formatTransferSummary(kind: 'export' | 'backup' | 'restore', summary: TransferSummary): string {
+  const nouns = kind === 'backup'
+    ? `${summary.sourceCount} source${summary.sourceCount === 1 ? '' : 's'}`
+    : `${summary.totalItems} item${summary.totalItems === 1 ? '' : 's'}`;
+  const bytes = formatBytes(summary.totalBytes);
+  const details = summary.sources
+    .map((source) => `${source.name} [${source.itemCount} ${source.itemCount === 1 ? 'item' : 'items'} · ${formatBytes(source.byteLength)}]`)
+    .join(', ');
+  const base = kind === 'restore'
+    ? `restored ${nouns} (${bytes})`
+    : kind === 'backup'
+      ? `snapshot created from ${nouns} (${bytes})`
+      : `exported ${nouns} (${bytes})`;
+  const detailText = details ? `: ${details}` : '';
+  if (summary.failedEntries.length === 0) return `${base}${detailText}`;
+  const failed = summary.failedEntries.join('; ');
+  return `${base}${detailText}; failed: ${failed}`;
+}
+
+export function formatBytes(byteLength: number): string {
+  if (byteLength < 1024) return `${byteLength} B`;
+  const kb = byteLength / 1024;
+  if (kb < 1024) return `${kb.toFixed(kb < 10 ? 1 : 0)} KB`;
+  const mb = kb / 1024;
+  if (mb < 1024) return `${mb.toFixed(mb < 10 ? 1 : 0)} MB`;
+  const gb = mb / 1024;
+  return `${gb.toFixed(gb < 10 ? 1 : 0)} GB`;
 }
 
 function normalizeManifest(input: Partial<ArchiveManifestV1> & { items?: ArchiveManifestEntry[] }): ArchiveManifestV1 {

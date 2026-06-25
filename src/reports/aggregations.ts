@@ -37,6 +37,23 @@ export type DateStats = {
   rangeDays: number;
 };
 
+export interface SourceDescriptor {
+  kind: 'sql' | 'nosql';
+  name: string;
+}
+
+export function formatSourceLabel(source: SourceDescriptor): string {
+  return `${source.kind === 'sql' ? 'SQL' : 'NoSQL'} · ${source.name}`;
+}
+
+export function formatCountLabel(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+export function describeSourceResult(source: SourceDescriptor, count: number, noun: string): string {
+  return `${formatCountLabel(count, noun)} from ${formatSourceLabel(source)}`;
+}
+
 function inferColumnType(rows: unknown[][]): 'number' | 'string' | 'boolean' | 'date' | 'null' {
   let num = 0;
   let boo = 0;

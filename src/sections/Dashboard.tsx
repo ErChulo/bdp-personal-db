@@ -15,7 +15,7 @@ const HOTKEYS: Array<[string, string, string]> = [
 ];
 
 const THEMES: { id: ThemeId; label: string; swatch: string; bg: string; fg: string }[] = [
-  { id: 'mono', label: 'Mono Inverse', swatch: '#5cf2d6', bg: '#0f1118', fg: '#e6e9f2' },
+  { id: 'mono', label: 'Mono Inverse', swatch: '#5cf2d6', bg: '#000', fg: '#e6e9f2' },
   { id: 'amber', label: 'Amber Phosphor', swatch: '#f7b955', bg: '#100c08', fg: '#f7b955' },
   { id: 'green', label: 'Green Phosphor', swatch: '#7cd87c', bg: '#07120c', fg: '#7cd87c' },
   { id: 'lilac', label: 'Lilac', swatch: '#e879f9', bg: '#14091a', fg: '#e2c8f7' },

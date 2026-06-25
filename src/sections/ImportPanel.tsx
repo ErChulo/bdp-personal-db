@@ -229,9 +229,12 @@ export function ImportPanel() {
         <h1>Import</h1>
         <span className="fkey">F5</span>
         <span style={{ flex: 1 }} />
-        <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Supported: CSV · JSON · NDJSON · .sql dump · .sqlite · .db</span>
+        <span style={{ color: 'var(--fg-muted)', fontSize: 12 }}>Supported: CSV · JSON · NDJSON · .sql dump · .sqlite · .db · 500 MB cap</span>
       </div>
       <div className="section-content">
+        <div style={{ marginBottom: 8, color: 'var(--fg-muted)', fontSize: 12 }}>
+          Files over 500 MB are rejected before parsing; preview and import stay local.
+        </div>
         <div className="banner" style={{ border: '1px dashed var(--accent)', padding: 14, textAlign: 'center', color: 'var(--accent)' }}
              onDragOver={(e) => e.preventDefault()}
              onDrop={(e) => { e.preventDefault(); void onFiles(e.dataTransfer.files); }}>

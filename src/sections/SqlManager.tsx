@@ -5,6 +5,7 @@ import { sqlStore } from '../adapters/sqlStore';
 import type { SqlTableInfo } from '../utils/schema';
 import { renderAsciiTable } from '../utils/asciiTable';
 import { uid } from '../utils/schema';
+import { CodeEditor } from '../components/CodeEditor';
 
 type Tab = 'schema' | 'data' | 'indexes' | 'settings';
 
@@ -235,8 +236,17 @@ export function SqlManager() {
             <div style={{ padding: 10, borderTop: '1px solid var(--border)' }}>
               <label htmlFor="sql-newName">name</label>
               <input id="sql-newName" name="newName" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="my-db" style={{ width: '100%' }} />
-              <label htmlFor="sql-newSchema" style={{ display: 'block', marginTop: 6 }}>initial schema (optional)</label>
-              <textarea id="sql-newSchema" name="newSchema" value={newSchema} onChange={(e) => setNewSchema(e.target.value)} style={{ minHeight: 80 }} />
+              <div style={{ display: 'block', marginTop: 6 }}>initial schema (optional)</div>
+              <CodeEditor
+                id="sql-newSchema"
+                name="newSchema"
+                ariaLabel="initial schema"
+                value={newSchema}
+                onChange={setNewSchema}
+                language="sql"
+                minHeight={96}
+                placeholder="CREATE TABLE example (id INTEGER PRIMARY KEY, name TEXT);"
+              />
               <div className="btn-row" style={{ marginTop: 6 }}>
                 <button className="btn-primary" disabled={busy || !canWrite} onClick={handleCreate}>create</button>
                 <button onClick={() => setCreating(false)}>cancel</button>

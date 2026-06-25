@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
 import { useAppStore } from './store';
-import { requestSkipWaiting } from '../workspace/update';
+import { inspectOfflineReadiness, requestSkipWaiting } from '../workspace/update';
 import { requestWorkspaceTakeover } from '../workspace/lease';
 
-export function StatusBar() {
+export function StatusBar({ onLockVault }: { onLockVault?: () => void }) {
   const section = useAppStore((s) => s.section);
   const sqlDbs = useAppStore((s) => s.sqlDbs);
   const nosql = useAppStore((s) => s.nosqlCollections);
@@ -14,6 +14,8 @@ export function StatusBar() {
   const setOwnership = useAppStore((s) => s.setOwnership);
   const ownership = useAppStore((s) => s.ownership);
   const updateState = useAppStore((s) => s.updateState);
+  const offlineReadiness = useAppStore((s) => s.offlineReadiness);
+  const setOfflineReadiness = useAppStore((s) => s.setOfflineReadiness);
   const operations = useAppStore((s) => s.operations);
 
   useEffect(() => {
@@ -42,6 +44,10 @@ export function StatusBar() {
   function takeOver() {
     if (!confirm('Take over write access in this tab? Other open tabs become read-only for mutations.')) return;
     requestWorkspaceTakeover(setOwnership);
+  }
+
+  async function verifyOffline() {
+    setOfflineReadiness(await inspectOfflineReadiness());
   }
 
   return (
@@ -74,9 +80,30 @@ export function StatusBar() {
           update ready
         </button>
       )}
+      <button
+        className={`pill ${offlineReadiness.status === 'ready' || offlineReadiness.status === 'offline' ? 'online' : offlineReadiness.status === 'failed' ? 'danger' : 'offline'}`}
+        onClick={() => void verifyOffline()}
+        title={offlineReadiness.message ?? undefined}
+        aria-label="Verify offline readiness"
+      >
+        {offlineReadiness.status === 'ready'
+          ? 'offline ready'
+          : offlineReadiness.status === 'offline'
+            ? 'offline cache'
+            : offlineReadiness.status === 'installing'
+              ? 'offline installing'
+              : offlineReadiness.status === 'unsupported'
+                ? 'offline unsupported'
+                : 'online only'}
+      </button>
       {ownership.status !== 'writable' && (
         <button className="pill" onClick={takeOver} disabled={ownership.status === 'acquiring' || operations.activeCount > 0} title={ownership.message ?? undefined}>
           take over
+        </button>
+      )}
+      {onLockVault && (
+        <button className="pill" onClick={onLockVault} disabled={operations.activeCount > 0}>
+          lock vault
         </button>
       )}
       {estimate && (

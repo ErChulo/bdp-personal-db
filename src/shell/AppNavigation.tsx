@@ -1,3 +1,4 @@
+import coquiLogo from '../assets/coqui-negro.jpg';
 import { SECTIONS } from './sectionRegistry';
 import { useAppStore, type SectionId } from './store';
 
@@ -21,19 +22,26 @@ const GROUPS: Array<{ label: string; ids: SectionId[] }> = [
   { label: 'Tools', ids: ['reports', 'search', 'schemaDiff', 'keygen'] },
 ];
 
-export function AppNavigation() {
+export function AppNavigation({ onLockVault }: { onLockVault?: () => void }) {
   const active = useAppStore((state) => state.section);
   const setSection = useAppStore((state) => state.setSection);
   const openPalette = useAppStore((state) => state.setPaletteOpen);
 
   return (
-    <aside className="app-nav" aria-label="Primary navigation">
+    <aside className="app-nav">
       <button className="nav-brand" onClick={() => setSection('dashboard')} aria-label="Open dashboard">
-        <span className="nav-brand-mark">B</span>
+        <span
+          className="nav-brand-mark nav-brand-mark-coqui"
+          aria-hidden="true"
+          style={{
+            WebkitMaskImage: `url(${coquiLogo})`,
+            maskImage: `url(${coquiLogo})`,
+          }}
+        />
         <span><strong>BDP</strong><small>local database studio</small></span>
       </button>
 
-      <nav>
+      <nav aria-label="Primary navigation">
         {GROUPS.map((group) => (
           <div className="nav-group" key={group.label}>
             <div className="nav-group-label">{group.label}</div>
@@ -57,23 +65,28 @@ export function AppNavigation() {
         ))}
       </nav>
 
-      <button className="palette-trigger" onClick={() => openPalette(true)}>
-        <span>Quick actions</span><kbd>⌘ K</kbd>
-      </button>
+      <div className="nav-footer">
+        {onLockVault && <button className="nav-lock" onClick={onLockVault}>Lock vault</button>}
+        <button className="palette-trigger" onClick={() => openPalette(true)}>
+          <span>Quick actions</span><kbd>⌘ K</kbd>
+        </button>
+      </div>
     </aside>
   );
 }
 
 export function WorkspaceToolbar() {
   const section = useAppStore((state) => state.section);
+  const lastSection = useAppStore((state) => state.lastSection);
   const setSection = useAppStore((state) => state.setSection);
   const definition = SECTIONS.find((candidate) => candidate.id === section);
+  const lastDefinition = SECTIONS.find((candidate) => candidate.id === lastSection);
 
   return (
     <div className="workspace-toolbar">
       {section !== 'dashboard' ? (
-        <button className="back-button" onClick={() => setSection('dashboard')}>
-          <span aria-hidden="true">←</span> Dashboard
+        <button className="back-button" onClick={() => setSection(lastSection)}>
+          <span aria-hidden="true">←</span> Back to {lastDefinition?.label ?? lastSection}
         </button>
       ) : <span className="workspace-eyebrow">Overview</span>}
       <span className="workspace-path">/</span>
