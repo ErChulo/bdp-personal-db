@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useAppStore } from './store';
 import { inspectOfflineReadiness, requestSkipWaiting } from '../workspace/update';
 import { requestWorkspaceTakeover } from '../workspace/lease';
+import coquiLogo from '../assets/coqui-negro.jpg';
 
 export function StatusBar({ onLockVault }: { onLockVault?: () => void }) {
   const section = useAppStore((s) => s.section);
@@ -52,7 +53,10 @@ export function StatusBar({ onLockVault }: { onLockVault?: () => void }) {
 
   return (
     <div className="status-bar" role="status" aria-live="polite">
-      <span className="brand">◉ BDP</span>
+      <span className="brand brand-coqui" aria-label="BDP">
+        <img src={coquiLogo} alt="" className="status-brand-logo" />
+        <span>BDP</span>
+      </span>
       <span className={`pill ${ownership.status === 'writable' ? 'online' : 'warn'}`}>
         {ownership.status === 'writable' ? 'WRITABLE' : 'READ-ONLY'}
       </span>

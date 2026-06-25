@@ -30,14 +30,9 @@ export function AppNavigation({ onLockVault }: { onLockVault?: () => void }) {
   return (
     <aside className="app-nav">
       <button className="nav-brand" onClick={() => setSection('dashboard')} aria-label="Open dashboard">
-        <span
-          className="nav-brand-mark nav-brand-mark-coqui"
-          aria-hidden="true"
-          style={{
-            WebkitMaskImage: `url(${coquiLogo})`,
-            maskImage: `url(${coquiLogo})`,
-          }}
-        />
+        <span className="nav-brand-mark nav-brand-mark-coqui" aria-hidden="true">
+          <img src={coquiLogo} alt="" className="nav-brand-logo" />
+        </span>
         <span><strong>BDP</strong><small>local database studio</small></span>
       </button>
 
